@@ -28,6 +28,7 @@ class MainActivity : FragmentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        scheduleDailyHealthTip(this)
         setContent {
             // Force Light Theme as per user request to remove Dark Mode feature
             SympcareAITheme(darkTheme = false) {
@@ -89,6 +90,7 @@ class MainActivity : FragmentActivity() {
                     }
 
                     Screen.Login -> {
+                        PermissionRequestLogic() // Request permissions on Login screen entry
                         LoginScreen(
                             onDoctorSignUpClick = { navigateTo(Screen.DoctorSignUp) },
                             onDoctorForgotPasswordClick = { navigateTo(Screen.DoctorForgotPassword) },
@@ -485,5 +487,38 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
 fun GreetingPreview() {
     SympcareAITheme {
         Greeting("Android")
+    }
+}
+
+private fun scheduleDailyHealthTip(context: android.content.Context) {
+    val alarmManager = context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+    val intent = android.content.Intent(context, HealthTipNotificationReceiver::class.java)
+    val pendingIntent = android.app.PendingIntent.getBroadcast(
+        context,
+        0,
+        intent,
+        android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+    )
+
+    // Set time to 9:00 AM
+    val calendar = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 9)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        if (before(java.util.Calendar.getInstance())) {
+            add(java.util.Calendar.DATE, 1) // If already past 9 AM, schedule for tomorrow
+        }
+    }
+
+    try {
+        // Use setInexactRepeating for power efficiency
+        alarmManager.setInexactRepeating(
+            android.app.AlarmManager.RTC_WAKEUP,
+            calendar.timeInMillis,
+            android.app.AlarmManager.INTERVAL_DAY,
+            pendingIntent
+        )
+    } catch (e: SecurityException) {
+        e.printStackTrace()
     }
 }

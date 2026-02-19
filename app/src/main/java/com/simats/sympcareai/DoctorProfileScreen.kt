@@ -217,33 +217,6 @@ fun DoctorProfileScreen(
                 }
                 
                 Spacer(modifier = Modifier.height(24.dp))
-
-                // Start AI Chat Button
-                Button(
-                    onClick = onChatClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF6A5ACD) // Purple
-                    ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.Chat,
-                        contentDescription = "Chat",
-                        tint = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Start AI Assistant Chat",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-
                 Spacer(modifier = Modifier.height(30.dp))
             }
         }

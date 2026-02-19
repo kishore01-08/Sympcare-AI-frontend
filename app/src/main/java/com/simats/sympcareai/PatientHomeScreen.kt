@@ -247,8 +247,10 @@ fun PatientHomeScreen(
                         color = Color.Black
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+                    val todaysTip = HealthTipsManager.getTodayTip()
+
                     Text(
-                        "Stay hydrated! Drinking 8 glasses of water daily helps maintain energy and supports overall health.",
+                        text = todaysTip,
                         color = Color.Gray,
                         fontSize = 14.sp
                     )

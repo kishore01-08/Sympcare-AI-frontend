@@ -80,30 +80,7 @@ fun ChatHistoryScreen(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(24.dp))
 
-                        // Search Field
-                        TextField(
-                            value = "",
-                            onValueChange = {},
-                            placeholder = { Text("Search your chats...", color = Color.Gray) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Search",
-                                    tint = Color.Gray
-                                )
-                            },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.White,
-                                unfocusedContainerColor = Color.White,
-                                disabledContainerColor = Color.White,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent
-                            ),
-                            shape = RoundedCornerShape(32.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
                 }
             }
@@ -119,26 +96,7 @@ fun ChatHistoryScreen(
                     ChatHistoryCard(chat = chat, onClick = onChatClick)
                 }
             }
-            
-            // Footer Info Item
-            item {
-                Surface(
-                    color = Color(0xFFE8F5E9),
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "💬 Your conversations are stored securely on your device",
-                            fontSize = 12.sp,
-                            color = Color.DarkGray
-                        )
-                    }
-                }
-            }
+
         }
     }
 }

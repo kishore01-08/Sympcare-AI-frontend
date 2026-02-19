@@ -18,19 +18,50 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataPrivacyScreen(
     onBackClick: () -> Unit
 ) {
-    // Permission States (Mock)
-    var cameraPermission by remember { mutableStateOf(true) }
-    var micPermission by remember { mutableStateOf(true) }
-    var storagePermission by remember { mutableStateOf(false) }
-    var locationPermission by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-    // Privacy Settings
+    // Real Permission States
+    var cameraPermission by remember { mutableStateOf(false) }
+    var micPermission by remember { mutableStateOf(false) }
+    var notificationPermission by remember { mutableStateOf(false) }
+
+    // Function to check permissions
+    fun checkPermissions() {
+        cameraPermission = ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        micPermission = ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            notificationPermission = ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            notificationPermission = true // implicitly granted on older versions
+        }
+    }
+
+    // Check on Resume (returning from Settings)
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                checkPermissions()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Privacy Settings (Mock for now as backend integration is separate)
     var shareData by remember { mutableStateOf(true) }
     var saveHistory by remember { mutableStateOf(true) }
     var personalizedAds by remember { mutableStateOf(false) }
@@ -71,36 +102,45 @@ fun DataPrivacyScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "These system permissions are required for full app functionality. You can manage them in System Settings.",
+                        fontSize = 12.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+
+                    val openSettings = {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }
+
                     PrivacyToggleItem(
                         icon = Icons.Default.CameraAlt,
                         title = "Camera",
-                        description = "Allow app to access camera for photos and scanning.",
+                        description = if (cameraPermission) "Allowed" else "Denied",
                         checked = cameraPermission,
-                        onCheckedChange = { cameraPermission = it }
+                        onCheckedChange = { openSettings() },
+                        enabled = true // Switch looks enabled but action opens settings
                     )
                     Divider(color = Color.LightGray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 12.dp))
                     PrivacyToggleItem(
                         icon = Icons.Default.Mic,
                         title = "Microphone",
-                        description = "Allow app to access microphone for voice commands.",
+                        description = if (micPermission) "Allowed" else "Denied",
                         checked = micPermission,
-                        onCheckedChange = { micPermission = it }
+                        onCheckedChange = { openSettings() },
+                         enabled = true
                     )
                     Divider(color = Color.LightGray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 12.dp))
                     PrivacyToggleItem(
-                        icon = Icons.Default.Folder,
-                        title = "Storage",
-                        description = "Allow app to access files for uploading reports.",
-                        checked = storagePermission,
-                        onCheckedChange = { storagePermission = it }
-                    )
-                     Divider(color = Color.LightGray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 12.dp))
-                    PrivacyToggleItem(
-                        icon = Icons.Default.LocationOn,
-                        title = "Location",
-                        description = "Allow app to access location for nearby services.",
-                        checked = locationPermission,
-                        onCheckedChange = { locationPermission = it }
+                        icon = Icons.Default.Notifications,
+                        title = "Notifications",
+                        description = if (notificationPermission) "Allowed" else "Denied",
+                        checked = notificationPermission,
+                        onCheckedChange = { openSettings() },
+                         enabled = true
                     )
                 }
             }
@@ -137,7 +177,7 @@ fun DataPrivacyScreen(
                         checked = saveHistory,
                         onCheckedChange = { saveHistory = it }
                     )
-                     Divider(color = Color.LightGray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 12.dp))
+                    Divider(color = Color.LightGray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 12.dp))
                     PrivacyToggleItem(
                         icon = Icons.Outlined.AdsClick,
                         title = "Personalized Content",
@@ -159,7 +199,8 @@ fun PrivacyToggleItem(
     title: String,
     description: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -191,6 +232,7 @@ fun PrivacyToggleItem(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White,
                 checkedTrackColor = Color(0xFF009688),
