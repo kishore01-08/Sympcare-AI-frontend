@@ -61,7 +61,7 @@ class MainActivity : FragmentActivity() {
                 fun navigateTo(screen: Screen) {
                     backStack.add(screen)
                 }
-
+//testinhhh
                 // Helper to replace current screen (e.g. Splash -> Intro)
                 fun replaceWith(screen: Screen) {
                     if (backStack.isNotEmpty()) {
