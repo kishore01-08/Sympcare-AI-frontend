@@ -2,15 +2,12 @@ package com.simats.sympcareai
 
 
 import android.os.Bundle
+import android.net.Uri
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,32 +19,53 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.simats.sympcareai.ui.theme.SympcareAITheme
 import androidx.compose.ui.graphics.Color
+import com.simats.sympcareai.data.response.AIAnalysisResponse
+import com.simats.sympcareai.network.RetrofitClient
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        scheduleDailyHealthTip(this)
         setContent {
             // Force Light Theme as per user request to remove Dark Mode feature
             SympcareAITheme(darkTheme = false) {
                 // Manual BackStack Implementation
-                val backStack = remember { mutableStateListOf(Screen.Splash) }
+                val backStack = remember { mutableStateListOf<Screen>(Screen.Splash) }
                 var selectedSymptoms by remember { mutableStateOf(emptyList<String>()) }
                 
                 // Active Patients List (Hoisted State)
-                val patients = remember { mutableStateListOf(
-                    DoctorPatient("1", "John Doe", "Headache", "Now", "Online", Color(0xFFE0F2F1), Color(0xFF009688), "J", Color(0xFF00BFA5)),
-                    DoctorPatient("2", "Priya Sharma", "Fever", "10m", "Completed", Color(0xFFE8EAF6), Color(0xFF3F51B5), "P", Color(0xFF448AFF)),
-                    DoctorPatient("3", "Alex Chen", "Wellness", "15m", "Waiting", Color(0xFFFFF8E1), Color(0xFFFF8F00), "A", Color(0xFFFFB300))
-                ) }
+                val patients = remember { mutableStateListOf<DoctorPatient>() }
                 
                 var patientListFilter by remember { mutableStateOf("Total") } // "Total", "Pending", "Completed"
                 
+                // Temporary state for Patient ID flow (SignUp -> Disclaimer -> Profile)
+                var tempPatientName by remember { mutableStateOf("") }
+                var tempPatientId by remember { mutableStateOf("") }
+                var tempDoctorName by remember { mutableStateOf("") }
+                var tempDoctorId by remember { mutableStateOf("") }
+                var profileRefreshTrigger by remember { mutableStateOf(0) }
+                var resetEmail by remember { mutableStateOf("") }
+                var doctorResetEmail by remember { mutableStateOf("") }
                 // Derived counts
                 val patientsTodayCount = patients.count { it.status != "Completed" }
                 val completedPatientsCount = patients.count { it.status == "Completed" }
+
+                var doctorSymptomList by remember { mutableStateOf(emptyList<String>()) }
+                var doctorPatientTargetId by remember { mutableStateOf("") }
+
+
+
+                // --- Pending File Analysis States (For Unified Report) ---
+                var pendingFileUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+                var pendingFileDescription by remember { mutableStateOf("") }
+                var pendingFileCategory by remember { mutableStateOf("General") }
+                var fileAnalysisUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+                var fileAnalysisDescription by remember { mutableStateOf("") }
+                var fileAnalysisCategory by remember { mutableStateOf("General") }
+                var fileAnalysisSessionId by remember { mutableStateOf(-1) }
 
                 val viewedPatientIds = remember { mutableStateListOf<String>() }
                 val currentScreen = backStack.lastOrNull() ?: Screen.Splash
@@ -83,6 +101,53 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
+                fun fetchViewedPatients(doctorId: String) {
+                    lifecycleScope.launch {
+                        try {
+                            val response = RetrofitClient.apiService.listViewedPatients(mapOf("doc_id" to doctorId))
+                            if (response.isSuccessful) {
+                                val savedPatients = response.body() ?: emptyList()
+                                patients.clear()
+                                patients.addAll(savedPatients.map { vp ->
+                                    DoctorPatient(
+                                        id = vp.patientId,
+                                        name = vp.patientName,
+                                        //symptom = vp.symptoms ?: "No records",
+                                        time = "Viewed",
+                                        status = if (vp.status == "Completed") "Completed" else "Online",
+                                        statusColor = if (vp.status == "Completed") Color(0xFFE8EAF6) else Color(0xFFE0F2F1),
+                                        statusTextColor = if (vp.status == "Completed") Color(0xFF3F51B5) else Color(0xFF009688),
+                                        initial = vp.patientName.take(1).uppercase(),
+                                        initialBg = Color(0xFF00BFA5)
+                                    )
+                                })
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+
+                fun saveViewedPatient(doctorId: String, patientId: String, patientName: String, status: String = "viewed", symptoms: String? = null) {
+                    lifecycleScope.launch {
+                        try {
+                            val params = mutableMapOf(
+                                "doc_id" to doctorId,
+                                "patient_id" to patientId,
+                                "patient_name" to patientName,
+                                "status" to status
+                            )
+                            if (symptoms != null) params["symptoms"] = symptoms
+                            
+                            RetrofitClient.apiService.saveViewedPatient(params)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+
+                var collectedAnswers by remember { mutableStateOf(emptyMap<String, String>()) }
+                
                 when (currentScreen) {
                     Screen.Splash -> {
                         // Splash -> Login (Directly, bypassing Intro)
@@ -94,10 +159,19 @@ class MainActivity : FragmentActivity() {
                         LoginScreen(
                             onDoctorSignUpClick = { navigateTo(Screen.DoctorSignUp) },
                             onDoctorForgotPasswordClick = { navigateTo(Screen.DoctorForgotPassword) },
-                            onDoctorLoginSuccess = { resetTo(Screen.DoctorHome) },
+                            onDoctorLoginSuccess = { id, name -> 
+                                tempDoctorId = id
+                                tempDoctorName = name
+                                fetchViewedPatients(id)
+                                resetTo(Screen.DoctorHome) 
+                            },
                             onPatientSignUpClick = { navigateTo(Screen.PatientSignUp) },
                             onPatientForgotPasswordClick = { navigateTo(Screen.PatientForgotPassword) },
-                            onPatientLoginSuccess = { resetTo(Screen.PatientHome) },
+                            onPatientLoginSuccess = { id, name ->
+                                tempPatientId = id
+                                tempPatientName = name
+                                resetTo(Screen.PatientHome) 
+                            },
                             initialPage = 0 // Default to Patient
                         )
                     }
@@ -110,7 +184,6 @@ class MainActivity : FragmentActivity() {
                                 navigateTo(screen) 
                             },
                             onProfileClick = { navigateTo(Screen.DoctorProfile) },
-                            onNotificationClick = { navigateTo(Screen.Notifications) },
                             onPatientsTodayClick = {
                                 patientListFilter = "Pending"
                                 navigateTo(Screen.DoctorPatients)
@@ -119,8 +192,10 @@ class MainActivity : FragmentActivity() {
                                 patientListFilter = "Completed"
                                 navigateTo(Screen.DoctorPatients)
                             },
+                            doctorName = tempDoctorName,
                             patientsTodayCount = patientsTodayCount,
-                            completedPatientsCount = completedPatientsCount
+                            completedPatientsCount = completedPatientsCount,
+                            patients = patients
                         )
                     }
                     Screen.DoctorProfile -> {
@@ -128,12 +203,13 @@ class MainActivity : FragmentActivity() {
                             onBackClick = { navigateBack() },
                             onEditClick = { navigateTo(Screen.EditDoctorProfile) },
                             onChatClick = { navigateTo(Screen.DoctorChat) },
-                            onNotificationClick = { navigateTo(Screen.Notifications) }
+                            userId = tempDoctorId
                         )
                     }
                     Screen.EditDoctorProfile -> {
                         EditDoctorProfileScreen(
-                            onBackClick = { navigateBack() }
+                            onBackClick = { navigateBack() },
+                            doctorId = tempDoctorId
                         )
                     }
                     Screen.DoctorPatients -> {
@@ -152,6 +228,8 @@ class MainActivity : FragmentActivity() {
                                         statusColor = Color(0xFFE8EAF6),
                                         statusTextColor = Color(0xFF3F51B5)
                                     )
+                                    // Persistent update ⭐
+                                    saveViewedPatient(tempDoctorId, patient.id, patient.name, "Completed")
                                 }
                             },
                             patients = patients,
@@ -161,45 +239,70 @@ class MainActivity : FragmentActivity() {
                     Screen.DoctorPatientPortal -> {
                         DoctorPatientPortalScreen(
                             onBackClick = { navigateBack() },
-                            onViewPatientDetails = { patientId ->
-                                if (patientId.isNotEmpty() && !viewedPatientIds.contains(patientId)) {
-                                    viewedPatientIds.add(patientId)
-                                    // Add new patient to list
-                                    patients.add(0, DoctorPatient(
-                                        id = patientId,
-                                        name = "Patient $patientId", // Dummy name
-                                        symptom = "Unknown",
-                                        time = "Now",
-                                        status = "Online",
-                                        statusColor = Color(0xFFE0F2F1),
-                                        statusTextColor = Color(0xFF009688),
-                                        initial = "N",
-                                        initialBg = Color(0xFF00BFA5)
-                                    ))
+                             onViewPatientDetails = { patientId ->
+                                if (patientId.isNotEmpty()) {
+                                    val existingIndex = patients.indexOfFirst { it.id == patientId }
+                                    if (existingIndex != -1) {
+                                        // Move to top if already exists
+                                        val patient = patients.removeAt(existingIndex)
+                                        patients.add(0, patient)
+                                    } else {
+                                        // Add new patient to top
+                                        patients.add(0, DoctorPatient(
+                                            id = patientId,
+                                            name = "Patient $patientId",
+                                            time = "Now",
+                                            status = "Online",
+                                            statusColor = Color(0xFFE0F2F1),
+                                            statusTextColor = Color(0xFF009688),
+                                            initial = patientId.take(1).uppercase(),
+                                            initialBg = Color(0xFF00BFA5)
+                                        ))
+                                    }
+                                    
+                                    // Save to backend
+                                    val currentPatient = patients.firstOrNull { it.id == patientId }
+                                    if (currentPatient != null) {
+                                        saveViewedPatient(tempDoctorId, patientId, currentPatient.name)
+                                    }
                                 }
-                                navigateTo(Screen.DoctorPatientDetails)
+                                navigateTo(Screen.DoctorPatientDetails(patientId))
                             },
-                            onCreateNewPatient = { navigateTo(Screen.CreatePatient) }
                         )
                     }
                     Screen.CreatePatient -> {
                         CreatePatientScreen(
                             onBackClick = { navigateBack() },
-                            onSubmitAndAnalyze = { id, symptoms -> navigateTo(Screen.AIPatientAnalysis) }
+                            onSubmitAndAnalyze = { id, symptoms ->
+                                doctorPatientTargetId = id
+                                doctorSymptomList = symptoms.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                navigateTo(Screen.AIPatientAnalysis)
+                            }
                         )
                     }
                     Screen.AIPatientAnalysis -> {
                         AIPatientAnalysisScreen(
-                            onBackClick = { navigateBack() } // Or navigateTo(Screen.DoctorPatientDetails) if that's the flow? 
-                            // Req: "submit and analyse it should navigated to AI analysis" 
-                            // then user can probably go back or to details. 
-                            // Let's just go back for now or I could add "View Details" logic here too.
-                            // The design shows a Back button.
+                            onBackClick = { navigateBack() },
+                            patientId = doctorPatientTargetId,
+                            symptoms = doctorSymptomList
                         )
                     }
-                    Screen.DoctorPatientDetails -> {
+                    is Screen.DoctorPatientDetails -> {
                         DoctorPatientDetailsScreen(
-                            onBackClick = { navigateBack() }
+                            patientId = currentScreen.patientId,
+                            onBackClick = { navigateBack() },
+                            onNavigateTo = { screen -> navigateTo(screen) },
+                            onDataLoaded = { name, ->
+                                val index = patients.indexOfFirst { it.id == currentScreen.patientId }
+                                if (index != -1) {
+                                    patients[index] = patients[index].copy(
+                                        name = name,
+                                        initial = name.take(1).uppercase()
+                                    )
+                                    // Update persistence with real name and symptom ⭐
+                                    saveViewedPatient(tempDoctorId, currentScreen.patientId, name)
+                                }
+                            }
                         )
                     }
 // Removed PatientLogin route as it's merged into Login
@@ -207,23 +310,36 @@ class MainActivity : FragmentActivity() {
                     Screen.DoctorSignUp -> {
                         DoctorSignUpScreen(
                             onSignInClick = { navigateBack() }, 
-                            onSignUpSuccess = { navigateTo(Screen.DoctorDisclaimer) }
+                            onSignUpSuccess = { id, name -> 
+                                tempDoctorId = id
+                                tempDoctorName = name
+                                navigateTo(Screen.DoctorDisclaimer) 
+                            }
                         )
                     }
+
                     Screen.PatientSignUp -> {
                         PatientSignUpScreen(
                             onSignInClick = { navigateBack() },
-                            onSignUpSuccess = { navigateTo(Screen.PatientDisclaimer) }
+                            onSignUpSuccess = { id, name -> 
+                                tempPatientId = id
+                                tempPatientName = name
+                                navigateTo(Screen.PatientDisclaimer) 
+                            }
                         )
                     }
                     Screen.DoctorForgotPassword -> {
                         DoctorForgotPasswordScreen(
                             onCancelClick = { navigateBack() },
-                            onSendOtpClick = { navigateTo(Screen.DoctorResetPassword) }
+                            onSendOtpClick = { email ->
+                                doctorResetEmail = email
+                                navigateTo(Screen.DoctorResetPassword)
+                            }
                         )
                     }
                     Screen.DoctorResetPassword -> {
                         DoctorResetPasswordScreen(
+                            email = doctorResetEmail,
                             onBackClick = { navigateBack() },
                             onSaveClick = { resetTo(Screen.Login) }
                         )
@@ -231,19 +347,31 @@ class MainActivity : FragmentActivity() {
                     Screen.PatientForgotPassword -> {
                         PatientForgotPasswordScreen(
                             onCancelClick = { navigateBack() },
-                            onSendOtpClick = { navigateTo(Screen.PatientResetPassword) }
+                            onSendOtpClick = { email ->
+                                resetEmail = email
+                                navigateTo(Screen.PatientResetPassword)
+                            }
                         )
                     }
                     Screen.PatientResetPassword -> {
                         PatientResetPasswordScreen(
+                            email = resetEmail,
                             onBackClick = { navigateBack() },
                             onSaveClick = { resetTo(Screen.Login) }
                         )
                     }
                     Screen.DoctorDisclaimer -> {
                         DisclaimerScreen(
-                            onAcceptClick = { resetTo(Screen.Login) }, // Accepted -> Login (Reset to avoid back loops)
+                            onAcceptClick = { navigateTo(Screen.DoctorProfileRegistration) }, // Flow: Disclaimer -> Doctor Profile Registration
                             isDoctor = true
+                        )
+                    }
+                    Screen.DoctorProfileRegistration -> {
+                        DoctorProfileRegistrationScreen(
+                            doctorId = tempDoctorId,
+                            initialFullName = tempDoctorName,
+                            onBackClick = { navigateBack() },
+                            onSaveSuccess = { resetTo(Screen.Login) }
                         )
                     }
                     Screen.PatientDisclaimer -> {
@@ -254,34 +382,84 @@ class MainActivity : FragmentActivity() {
                     }
                     Screen.PatientHealthProfile -> {
                         PatientHealthProfileScreen(
+                            patientId = tempPatientId,
+                            initialFullName = tempPatientName,
                             onBackClick = { navigateBack() },
-                            onSaveClick = { resetTo(Screen.PatientHome) } // Success -> Home (Reset)
+                            onSaveClick = { resetTo(Screen.Login) }
                         )
                     }
                     Screen.PatientHome -> {
                         PatientHomeScreen(
-                            onChatClick = { navigateTo(Screen.SymptomSelection) },
-                            onVoiceClick = { navigateTo(Screen.VoiceAssistant) },
-                            onHealthReportClick = { navigateTo(Screen.HealthReports) },
+                            patientName = tempPatientName,
+                            patientId = tempPatientId,
+                            currentSessionId = fileAnalysisSessionId,
+                            onChatClick = { 
+                                // Reset symptoms and answers before starting new chat
+                                selectedSymptoms = emptyList()
+                                collectedAnswers = emptyMap()
+                                navigateTo(Screen.SymptomSelection) 
+                            },
+                            onVoiceClick = { 
+                                selectedSymptoms = emptyList()
+                                collectedAnswers = emptyMap()
+                                navigateTo(Screen.VoiceAssistant) 
+                            },
+                            onHealthReportClick = { navigateTo(Screen.HealthReports()) },
                             onProfileClick = { navigateTo(Screen.PatientProfile) },
-                            onNavigateTo = { screen -> navigateTo(screen) },
-                            onNotificationClick = { navigateTo(Screen.Notifications) }
+                            onNavigateTo = { screen ->
+                                if (screen is Screen.UploadHealthFileWithSession) {
+                                    fileAnalysisSessionId = screen.sessionId
+                                    navigateTo(Screen.UploadHealthFile)
+                                } else {
+                                    navigateTo(screen)
+                                }
+                            },
+                            onSessionCreated = { sessionId ->
+                                fileAnalysisSessionId = sessionId
+                            }
                         )
                     }
                     Screen.Chat -> {
                         ChatScreen(
                             onBackClick = { navigateBack() },
-                            onAttachmentClick = { navigateTo(Screen.UploadHealthFile) },
                             onNavigateTo = { screen -> navigateTo(screen) },
-                            onFinishClick = { navigateTo(Screen.ReportAnalysis) },
-                            selectedSymptoms = selectedSymptoms
+                            onFinishClick = { analysisResult ->
+                                navigateTo(Screen.SymptomAnalysisResult(analysisResult, selectedSymptoms))
+                            },
+                            selectedSymptoms = selectedSymptoms,
+                            patientId = tempPatientId,
+                            sessionId = fileAnalysisSessionId
+                        )
+                    }
+                    is Screen.SymptomAnalysisResult -> {
+                        SymptomAnalysisResultScreen(
+                            onBackClick = { resetTo(Screen.PatientHome) },
+                            onNavigateTo = { screen -> navigateTo(screen) },
+                            analysisResult = currentScreen.result,
+                            selectedSymptoms = currentScreen.symptoms
+                        )
+                    }
+                    is Screen.SymptomReportDetails -> {
+                        SymptomReportDetailsScreen(
+                            onBackClick = { navigateBack() },
+                            onNavigateTo = { screen -> navigateTo(screen) },
+                            symptoms = currentScreen.symptoms,
+                            disease = currentScreen.disease,
+                            date = currentScreen.date,
+                            severityScore = currentScreen.severityScore,
+                            triage = currentScreen.triage
                         )
                     }
                     Screen.VoiceAssistant -> {
                         VoiceAssistantScreen(
                             onBackClick = { navigateBack() },
                             onNavigateTo = { screen -> navigateTo(screen) },
-                            selectedSymptoms = selectedSymptoms
+                            onAnalyseClick = { analysisResult ->
+                                navigateTo(Screen.SymptomAnalysisResult(analysisResult, selectedSymptoms))
+                            },
+                            selectedSymptoms = selectedSymptoms,
+                            patientId = tempPatientId,
+                            sessionId = fileAnalysisSessionId
                         )
                     }
                     Screen.DoctorSettings -> {
@@ -299,18 +477,41 @@ class MainActivity : FragmentActivity() {
                         )
                     }
                     Screen.UploadHealthFile -> {
-                         UploadHealthFileScreen(
-                             onBackClick = { navigateBack() },
-                             onUploadClick = { navigateTo(Screen.ReportAnalysis) }, // Success -> Report Analysis
-                             onNavigateTo = { screen -> navigateTo(screen) }
-                         )
+                        UploadHealthFileScreen(
+                            patientId = tempPatientId,
+                            symptoms = selectedSymptoms,
+                            answers = collectedAnswers,
+                            onBackClick = { navigateBack() },
+                            onAnalyseClick = { uris, desc, cat ->
+                                navigateTo(Screen.MedicalReportResult(
+                                    reportId = fileAnalysisSessionId,
+                                    uris = uris,
+                                    description = desc,
+                                    category = cat
+                                ))
+                            },
+                            onNavigateTo = { screen -> navigateTo(screen) },
+                            initialFileUris = pendingFileUris,
+                            initialDescription = pendingFileDescription,
+                            initialCategory = pendingFileCategory
+                        )
                     }
-                    Screen.ReportAnalysis -> {
+                    is Screen.ReportAnalysis -> {
                         ReportAnalysisScreen(
                             onBackClick = { navigateBack() },
                             onNavigateTo = { screen -> navigateTo(screen) },
-                            onNextClick = { navigateTo(Screen.Feedback) },
-                            selectedSymptoms = selectedSymptoms
+                            reportId = currentScreen.reportId
+                        )
+                    }
+                    is Screen.MedicalReportResult -> {
+                        MedicalReportResultScreen(
+                            onBackClick = { navigateBack() },
+                            onNavigateTo = { screen -> resetTo(screen) },
+                            patientId = tempPatientId,
+                            uris = currentScreen.uris,
+                            description = currentScreen.description,
+                            category = currentScreen.category,
+                            reportId = currentScreen.reportId
                         )
                     }
                     Screen.Feedback -> {
@@ -320,26 +521,40 @@ class MainActivity : FragmentActivity() {
                             onNavigateTo = { screen -> navigateTo(screen) }
                         )
                     }
-                    Screen.HealthReports -> {
+                    is Screen.HealthReports -> {
+                        val color = currentScreen.themeColor ?: Color(0xFFEF6C00)
                         HealthReportsScreen(
+                            patientId = if (currentScreen.patientId.isNotEmpty()) currentScreen.patientId else tempPatientId,
+                            initialTab = currentScreen.initialTab,
+                            themeColor = color,
                             onBackClick = { navigateBack() },
-                            onReportClick = { navigateTo(Screen.ReportAnalysis) },
+                            onNavigateTo = { screen -> navigateTo(screen) }
+                        )
+                    }
+                    is Screen.SavedReport -> {
+                        SavedReportScreen(
+                            reportId = currentScreen.reportId,
+                            onBackClick = { navigateBack() },
                             onNavigateTo = { screen -> navigateTo(screen) }
                         )
                     }
                     Screen.PatientProfile -> {
                         PatientProfileScreen(
+                            patientId = tempPatientId,
+                            refreshTrigger = profileRefreshTrigger,
                             onBackClick = { navigateBack() },
                             onEditClick = { navigateTo(Screen.EditPatientProfile) },
-                            onNavigateTo = { screen -> navigateTo(screen) },
-                            onNotificationClick = { navigateTo(Screen.Notifications) }
+                            onNavigateTo = { screen -> navigateTo(screen) }
                         )
                     }
                     Screen.EditPatientProfile -> {
-                        EditPatientProfileScreen(
+                        com.simats.sympcareai.EditPatientProfileScreen(
+                            patientId = tempPatientId,
                             onBackClick = { navigateBack() },
-                            onSaveClick = { navigateBack() } // Success -> Return to Profile
-                            
+                            onSaveSuccess = { 
+                                profileRefreshTrigger++
+                                navigateBack() 
+                            }
                         )
                     }
 
@@ -354,30 +569,34 @@ class MainActivity : FragmentActivity() {
                     Screen.ChatReadOnly -> {
                         ChatScreen(
                             onBackClick = { navigateBack() },
-                            onAttachmentClick = {},
                             onNavigateTo = { screen -> navigateTo(screen) },
                             onFinishClick = {}, // Hide finish button if needed or handle logic
-                            isReadOnly = true
+                            isReadOnly = true,
+                            patientId = tempPatientId
                         )
                     }
                     Screen.HealthMonitor -> {
-                        HealthMonitorScreen(
+                        HealthAssessmentScreen(
                             onBackClick = { resetTo(Screen.PatientHome) },
-                            onNavigateTo = { screen -> navigateTo(screen) }
+                            onComplete = { score ->
+                                navigateTo(Screen.HealthAnalysisResult(score))
+                            }
                         )
                     }
-                    Screen.HealthAssessment -> {
+                    is Screen.HealthAssessment -> {
                         HealthAssessmentScreen(
                             onBackClick = { navigateBack() },
-                            onNextClick = { navigateTo(Screen.HealthAnalysisResult) }
+                            onComplete = { score ->
+                                navigateTo(Screen.HealthAnalysisResult(score))
+                            }
                         )
                     }
-                    Screen.HealthAnalysisResult -> {
+                    is Screen.HealthAnalysisResult -> {
                         HealthAnalysisResultScreen(
-                            onCloseClick = { resetTo(Screen.HealthMonitor) },
+                            score = currentScreen.score,
+                            onCloseClick = { resetTo(Screen.PatientHome) },
                             onStartNewSessionClick = { 
-                                // Reset to assessment or monitor
-                                navigateTo(Screen.HealthAssessment) 
+                                navigateTo(Screen.HealthMonitor) 
                             }
                         )
                     }
@@ -410,26 +629,30 @@ class MainActivity : FragmentActivity() {
                         AccountSettingsScreen(
                             onBackClick = { navigateBack() },
                             onNavigateTo = { screen -> navigateTo(screen) },
-                            isDoctor = false // Default
+                            isDoctor = false, // Default
+                            userId = tempPatientId
                         )
                     }
                     Screen.PatientAccountSettings -> {
                         AccountSettingsScreen(
                             onBackClick = { navigateBack() },
                             onNavigateTo = { screen -> navigateTo(screen) },
-                            isDoctor = false
+                            isDoctor = false,
+                            userId = tempPatientId
                         )
                     }
                     Screen.DoctorAccountSettings -> {
                         AccountSettingsScreen(
                             onBackClick = { navigateBack() },
                             onNavigateTo = { screen -> navigateTo(screen) },
-                            isDoctor = true
+                            isDoctor = true,
+                            userId = tempDoctorId
                         )
                     }
                     Screen.ResetPassword -> {
                          // Fallback or handle based on context if possible, but better to use specific routes
                         ResetPasswordScreen(
+                            userId = tempPatientId,
                             onBackClick = { navigateBack() },
                             onSuccess = { navigateBack() },
                             isDoctor = false 
@@ -437,6 +660,7 @@ class MainActivity : FragmentActivity() {
                     }
                     Screen.PatientResetPasswordLoggedIn -> {
                         ResetPasswordScreen(
+                            userId = tempPatientId,
                             onBackClick = { navigateBack() },
                             onSuccess = { navigateBack() },
                             isDoctor = false
@@ -444,6 +668,7 @@ class MainActivity : FragmentActivity() {
                     }
                     Screen.DoctorResetPasswordLoggedIn -> {
                         ResetPasswordScreen(
+                            userId = tempDoctorId,
                             onBackClick = { navigateBack() },
                             onSuccess = { navigateBack() },
                             isDoctor = true
@@ -455,14 +680,54 @@ class MainActivity : FragmentActivity() {
                     Screen.TermsAndConditions -> {
                         TermsAndConditionsScreen(onBackClick = { navigateBack() })
                     }
-                    Screen.Notifications -> {
-                        NotificationScreen(onBackClick = { navigateBack() })
-                    }
-                    Screen.NotificationSettings -> {
-                        NotificationSettingsScreen(onBackClick = { navigateBack() })
-                    }
                     Screen.DataAndPrivacy -> {
                         DataPrivacyScreen(onBackClick = { navigateBack() })
+                    }
+                    is Screen.UploadHealthFileWithReport -> {
+                        UploadHealthFileScreen(
+                            patientId = tempPatientId,
+                            symptoms = selectedSymptoms,
+                            answers = collectedAnswers,
+                            onBackClick = { navigateBack() },
+                            onAnalyseClick = { uris, desc, cat ->
+                                navigateTo(Screen.MedicalReportResult(
+                                    reportId = currentScreen.reportId,
+                                    uris = uris,
+                                    description = desc,
+                                    category = cat
+                                ))
+                            },
+                            onNavigateTo = { screen -> navigateTo(screen) },
+                            initialFileUris = pendingFileUris,
+                            initialDescription = pendingFileDescription,
+                            initialCategory = pendingFileCategory
+                        )
+                    }
+                    is Screen.UploadHealthFileWithSession -> {
+                        // This case is usually handled in onNavigateTo redirection,
+                        // but added here for exhaustive when block.
+                        fileAnalysisSessionId = (currentScreen as Screen.UploadHealthFileWithSession).sessionId
+                        UploadHealthFileScreen(
+                            patientId = tempPatientId,
+                            symptoms = selectedSymptoms,
+                            answers = collectedAnswers,
+                            onBackClick = { navigateBack() },
+                            onAnalyseClick = { uris, desc, cat ->
+                                navigateTo(Screen.MedicalReportResult(
+                                    reportId = fileAnalysisSessionId,
+                                    uris = uris,
+                                    description = desc,
+                                    category = cat
+                                ))
+                            },
+                            onNavigateTo = { screen -> navigateTo(screen) },
+                            initialFileUris = pendingFileUris,
+                            initialDescription = pendingFileDescription,
+                            initialCategory = pendingFileCategory
+                        )
+                    }
+                    Screen.DoctorProfileRegistration -> {
+                        // Add implementation if needed, or placeholder
                     }
                 }
             }
@@ -470,8 +735,79 @@ class MainActivity : FragmentActivity() {
     }
 }
 
-enum class Screen {
-    Splash, Login, DoctorSignUp, PatientSignUp, DoctorForgotPassword, PatientForgotPassword, PatientResetPassword, DoctorResetPassword, DoctorDisclaimer, PatientDisclaimer, PatientHealthProfile, PatientHome, DoctorHome, DoctorProfile, EditDoctorProfile, DoctorPatients, DoctorPatientPortal, CreatePatient, AIPatientAnalysis, DoctorPatientDetails, Chat, VoiceAssistant, DoctorSettings, PatientSettings, DoctorChat, UploadHealthFile, ReportAnalysis, Feedback, HealthReports, PatientProfile, EditPatientProfile, ChatHistory, ChatReadOnly, HealthMonitor, HealthAssessment, HealthAnalysisResult, SymptomSelection, VoiceSymptomSelection, AccountSettings, ResetPassword, PatientAccountSettings, DoctorAccountSettings, PatientResetPasswordLoggedIn, DoctorResetPasswordLoggedIn, AboutApp, TermsAndConditions, Notifications, NotificationSettings, DataAndPrivacy
+sealed class Screen {
+    object Splash : Screen()
+    object Login : Screen()
+    object DoctorSignUp : Screen()
+    object PatientSignUp : Screen()
+    object DoctorForgotPassword : Screen()
+    object PatientForgotPassword : Screen()
+    object PatientResetPassword : Screen()
+    object DoctorResetPassword : Screen()
+    object DoctorDisclaimer : Screen()
+    object PatientDisclaimer : Screen()
+    object PatientHealthProfile : Screen()
+    object PatientHome : Screen()
+    object DoctorHome : Screen()
+    object DoctorProfile : Screen()
+    object EditDoctorProfile : Screen()
+    object DoctorPatients : Screen()
+    object DoctorPatientPortal : Screen()
+    object CreatePatient : Screen()
+    object AIPatientAnalysis : Screen()
+    data class DoctorPatientDetails(val patientId: String) : Screen()
+    object Chat : Screen()
+    object VoiceAssistant : Screen()
+    object DoctorSettings : Screen()
+    object PatientSettings : Screen()
+    object DoctorChat : Screen()
+    object UploadHealthFile : Screen()
+    data class ReportAnalysis(val reportId: Int = -1) : Screen()
+    data class MedicalReportResult(
+        val reportId: Int = -1,
+        val uris: List<Uri> = emptyList(),
+        val description: String = "",
+        val category: String = ""
+    ) : Screen()
+    object Feedback : Screen()
+    data class HealthReports(val patientId: String = "", val initialTab: Int = 0, val themeColor: Color? = null) : Screen()
+    data class SavedReport(val reportId: Int) : Screen()
+    object PatientProfile : Screen()
+    object EditPatientProfile : Screen()
+    object ChatHistory : Screen()
+    object ChatReadOnly : Screen()
+    object HealthMonitor : Screen()
+    data class HealthAssessment(val type: HealthAssessmentType = HealthAssessmentType.MORNING_WELLNESS) : Screen()
+    data class HealthAnalysisResult(val score: Int = 0) : Screen()
+    object SymptomSelection : Screen()
+    object VoiceSymptomSelection : Screen()
+    object AccountSettings : Screen()
+    object ResetPassword : Screen()
+    object PatientAccountSettings : Screen()
+    object DoctorAccountSettings : Screen()
+    object PatientResetPasswordLoggedIn : Screen()
+    object DoctorResetPasswordLoggedIn : Screen()
+    object AboutApp : Screen()
+    object TermsAndConditions : Screen()
+    object DataAndPrivacy : Screen()
+    object DoctorProfileRegistration : Screen()
+    
+    data class SymptomAnalysisResult(
+        val result: AIAnalysisResponse,
+        val symptoms: List<String>
+    ) : Screen()
+    
+    data class SymptomReportDetails(
+        val symptoms: List<String>,
+        val disease: String,
+        val date: String,
+        val severityScore: Float,
+        val triage: Int? = null
+    ) : Screen()
+    
+    // Parameterized screens
+    data class UploadHealthFileWithReport(val reportId: Int) : Screen()
+    data class UploadHealthFileWithSession(val sessionId: Int) : Screen()
 }
 
 @Composable
@@ -487,38 +823,5 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
 fun GreetingPreview() {
     SympcareAITheme {
         Greeting("Android")
-    }
-}
-
-private fun scheduleDailyHealthTip(context: android.content.Context) {
-    val alarmManager = context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
-    val intent = android.content.Intent(context, HealthTipNotificationReceiver::class.java)
-    val pendingIntent = android.app.PendingIntent.getBroadcast(
-        context,
-        0,
-        intent,
-        android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-    )
-
-    // Set time to 9:00 AM
-    val calendar = java.util.Calendar.getInstance().apply {
-        set(java.util.Calendar.HOUR_OF_DAY, 9)
-        set(java.util.Calendar.MINUTE, 0)
-        set(java.util.Calendar.SECOND, 0)
-        if (before(java.util.Calendar.getInstance())) {
-            add(java.util.Calendar.DATE, 1) // If already past 9 AM, schedule for tomorrow
-        }
-    }
-
-    try {
-        // Use setInexactRepeating for power efficiency
-        alarmManager.setInexactRepeating(
-            android.app.AlarmManager.RTC_WAKEUP,
-            calendar.timeInMillis,
-            android.app.AlarmManager.INTERVAL_DAY,
-            pendingIntent
-        )
-    } catch (e: SecurityException) {
-        e.printStackTrace()
     }
 }

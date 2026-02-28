@@ -11,7 +11,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -24,20 +23,44 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simats.sympcareai.network.RetrofitClient
 
 @Composable
 fun PatientHomeScreen(
+    patientName: String,
+    patientId: String,
+    currentSessionId: Int = -1,
+    refreshTrigger: Int = 0,
     onChatClick: () -> Unit,
     onVoiceClick: () -> Unit,
     onHealthReportClick: () -> Unit,
     onProfileClick: () -> Unit,
     onNavigateTo: (Screen) -> Unit,
-    onNotificationClick: () -> Unit
+    onSessionCreated: (Int) -> Unit
 ) {
+    val context = LocalContext.current
+    var profilePicUrl by remember { mutableStateOf<String?>(null) }
+    
+    // Fetch profile to get image
+    LaunchedEffect(patientId, refreshTrigger) {
+        if (patientId.isNotEmpty()) {
+            try {
+                val request = mapOf("patient_id" to patientId, "t" to System.currentTimeMillis().toString())
+                val response = com.simats.sympcareai.network.RetrofitClient.apiService.getHealthProfile(request)
+                if (response.isSuccessful) {
+                    profilePicUrl = response.body()?.profilePicture
+                }
+            } catch (e: Exception) {
+                // Ignore failure for minimal impact on home screen
+            }
+        }
+    }
+
     Scaffold(
         bottomBar = {
             AppBottomNavigationBar(
@@ -71,12 +94,22 @@ fun PatientHomeScreen(
                             .size(50.dp)
                             .clickable(onClick = onProfileClick)
                     ) {
-                         Icon(Icons.Default.Person, contentDescription = "Profile", tint = Color(0xFF009688), modifier = Modifier.padding(12.dp))
+                        if (profilePicUrl != null) {
+                            val imageUrl = if (profilePicUrl!!.startsWith("http")) profilePicUrl else "http://10.0.2.2:8000$profilePicUrl"
+                            coil.compose.AsyncImage(
+                                model = imageUrl,
+                                contentDescription = "Profile",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        } else {
+                            Icon(Icons.Default.Person, contentDescription = "Profile", tint = Color(0xFF009688), modifier = Modifier.padding(12.dp))
+                        }
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         Text(
-                            text = "Hello, Welcome!",
+                            text = "Welcome, $patientName!",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Black
@@ -88,34 +121,18 @@ fun PatientHomeScreen(
                         )
                     }
                 }
-                // Notification Icon (moved to right)
-                Surface(
-                    shape = CircleShape,
-                    color = Color.White,
-                    shadowElevation = 2.dp,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clickable(onClick = onNotificationClick)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Notifications,
-                        contentDescription = "Notifications",
-                        tint = Color.Gray,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Start New Chat Card
+            // Start New Consultation Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(140.dp)
-                    .clickable(onClick = onChatClick)
+                    .clickable(onClick = { onChatClick() })
             ) {
                 Box(
                     modifier = Modifier
@@ -129,14 +146,14 @@ fun PatientHomeScreen(
                 ) {
                     Column(modifier = Modifier.align(Alignment.CenterStart)) {
                         Text(
-                            text = "Start New Chat",
+                            text = "Start New Consultation",
                             color = Color.White,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Talk to your AI health assistant",
+                            text = "Talk to AI about your symptoms",
                             color = Color.White.copy(alpha = 0.8f),
                             fontSize = 14.sp
                         )
@@ -253,6 +270,51 @@ fun PatientHomeScreen(
                         text = todaysTip,
                         color = Color.Gray,
                         fontSize = 14.sp
+                    )
+                }
+            }
+
+             Spacer(modifier = Modifier.height(16.dp))
+
+             // Report Analysis
+             Card(
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp)
+                    .clickable(onClick = { 
+                        onNavigateTo(Screen.UploadHealthFile)
+                    })
+            ) {
+                 Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(Color(0xFFFF5F6D), Color(0xFFFFC371))
+                            )
+                        )
+                        .padding(24.dp)
+                ) {
+                    Column(modifier = Modifier.align(Alignment.CenterStart)) {
+                        Text(
+                            text = "Report Analysis",
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Analyze your medical documentation",
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 12.sp
+                        )
+                    }
+                    Icon(
+                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.align(Alignment.CenterEnd)
                     )
                 }
             }

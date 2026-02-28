@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,26 +27,49 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simats.sympcareai.data.response.SymptomsResponse
+import com.simats.sympcareai.network.RetrofitClient
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SymptomSelectionScreen(
     onBackClick: () -> Unit,
     onContinueClick: (List<String>) -> Unit
 ) {
-    // Defines the list of symptoms available for selection
-    val symptoms = listOf(
-        "Headache", "Fever", "Cough", "Fatigue", 
-        "Nausea", "Dizziness", "Sore Throat", "Body Ache",
-        "Shortness of Breath", "Chest Pain", "Skin Rash", "Stomach Ache"
-    )
+    // State to track symptoms from backend
+    var categoricalSymptoms by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     
     // State to track selected symptoms
     val selectedSymptoms = remember { mutableStateListOf<String>() }
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredSymptoms = symptoms.filter {
-        it.contains(searchQuery, ignoreCase = true)
+    // Fetch symptoms from backend
+    LaunchedEffect(Unit) {
+        isLoading = true
+        try {
+            val response = RetrofitClient.apiService.getSymptoms()
+            if (response.isSuccessful) {
+                categoricalSymptoms = response.body()?.symptoms ?: emptyMap()
+            } else {
+                errorMessage = "Failed to load symptoms: ${response.code()}"
+            }
+        } catch (e: Exception) {
+            errorMessage = "Network error: ${e.message}"
+        }
+        isLoading = false
+    }
+
+    // Process symptoms for display (filter and flatten for search IF searching, otherwise keep categories)
+    val displayData = remember(categoricalSymptoms, searchQuery) {
+        if (searchQuery.isEmpty()) {
+            categoricalSymptoms
+        } else {
+            categoricalSymptoms.mapValues { entry ->
+                entry.value.filter { it.contains(searchQuery, ignoreCase = true) }
+            }.filter { it.value.isNotEmpty() }
+        }
     }
 
     Scaffold(
@@ -161,28 +186,65 @@ fun SymptomSelectionScreen(
             
 
 
-            // Symptom Grid
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp, if (searchQuery.isNotEmpty()) Alignment.Bottom else Alignment.Top),
-                reverseLayout = searchQuery.isNotEmpty(), // Show items from bottom when searching
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(filteredSymptoms) { symptom ->
-                    val isSelected = selectedSymptoms.contains(symptom)
-                    SymptomCard(
-                        symptom = symptom,
-                        isSelected = isSelected,
-                        onClick = {
-                            if (isSelected) {
-                                selectedSymptoms.remove(symptom)
-                            } else {
-                                selectedSymptoms.add(symptom)
+            // Content Area
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF009688))
+                }
+            } else if (errorMessage != null) {
+                Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = errorMessage!!, color = Color.Red, textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { 
+                            isLoading = true
+                            errorMessage = null
+                        }) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            } else {
+                androidx.compose.foundation.lazy.LazyColumn(
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    displayData.forEach { (category, symptomsList) ->
+                        item {
+                            Text(
+                                text = category,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF37474F),
+                                modifier = Modifier.padding(bottom = 8.dp, top = 8.dp)
+                            )
+                        }
+                        
+                        item {
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                symptomsList.forEach { symptom ->
+                                    val isSelected = selectedSymptoms.contains(symptom)
+                                    SymptomCard(
+                                        symptom = symptom,
+                                        isSelected = isSelected,
+                                        modifier = Modifier.width(160.dp),
+                                        onClick = {
+                                            if (isSelected) {
+                                                selectedSymptoms.remove(symptom)
+                                            } else {
+                                                selectedSymptoms.add(symptom)
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
-                    )
+                    }
                 }
             }
         }
@@ -193,6 +255,7 @@ fun SymptomSelectionScreen(
 fun SymptomCard(
     symptom: String,
     isSelected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val borderColor = if (isSelected) Color(0xFF009688) else Color.Transparent
@@ -203,9 +266,8 @@ fun SymptomCard(
         color = backgroundColor,
         shape = RoundedCornerShape(16.dp),
         shadowElevation = if (isSelected) 4.dp else 1.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(100.dp)
+        modifier = modifier
+            .height(80.dp)
             .clip(RoundedCornerShape(16.dp))
             .border(2.dp, borderColor, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)

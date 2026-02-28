@@ -9,10 +9,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,14 +22,62 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simats.sympcareai.data.response.DoctorProfileResponse
+import com.simats.sympcareai.data.response.AccountInfoResponse
+import com.simats.sympcareai.network.RetrofitClient
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 
 @Composable
 fun DoctorProfileScreen(
     onBackClick: () -> Unit,
     onEditClick: () -> Unit,
     onChatClick: () -> Unit,
-    onNotificationClick: () -> Unit
+    userId: String // Pass the doc_id from MainActivity
 ) {
+    val context = LocalContext.current
+    
+    var fullName by remember { mutableStateOf("Loading...") }
+    var age by remember { mutableStateOf<Int?>(null) }
+    var gender by remember { mutableStateOf("Loading...") }
+    var specialization by remember { mutableStateOf("Loading...") }
+    var email by remember { mutableStateOf("Loading...") }
+    var isLoading by remember { mutableStateOf(true) }
+
+    // Fetch profile and account info on launch
+    LaunchedEffect(Unit) {
+        val docIdMap = mapOf("doc_id" to userId)
+        
+        try {
+            // 1. Fetch Profile Details
+            val profileResponse = RetrofitClient.apiService.getDoctorProfile(docIdMap)
+            if (profileResponse.isSuccessful) {
+                val profile = profileResponse.body()
+                fullName = profile?.fullName ?: fullName
+                age = profile?.age
+                gender = profile?.gender ?: gender
+                specialization = profile?.specialization ?: specialization
+            } else {
+                Toast.makeText(context, "Profile separation failed", Toast.LENGTH_SHORT).show()
+            }
+
+            // 2. Fetch Account Info (for Email)
+            val accountResponse = RetrofitClient.apiService.getDoctorAccountInfo(docIdMap)
+            isLoading = false
+            if (accountResponse.isSuccessful) {
+                email = accountResponse.body()?.email ?: email
+            } else {
+                Toast.makeText(context, "Account Info Error", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            isLoading = false
+            Toast.makeText(context, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -89,9 +136,6 @@ fun DoctorProfileScreen(
                         }
                     }
 
-                    // Notification Icon (Top Right)
-
-
                     // Title
                     Text(
                         text = "Doctor Profile",
@@ -114,12 +158,17 @@ fun DoctorProfileScreen(
                     color = Color.White
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "SJ",
-                            color = Color(0xFF6A5ACD),
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(30.dp), color = Color(0xFF6A5ACD))
+                        } else {
+                            val initials = fullName.split(" ").filter { it.isNotEmpty() }.take(2).map { it[0] }.joinToString("").uppercase()
+                            Text(
+                                text = initials,
+                                color = Color(0xFF6A5ACD),
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -153,28 +202,28 @@ fun DoctorProfileScreen(
                         ProfileInfoItem(
                             icon = Icons.Outlined.Person,
                             label = "Full Name",
-                            value = "Dr. Sarah Johnson"
+                            value = fullName
                         )
                         Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color.LightGray.copy(alpha = 0.3f))
                         
                         ProfileInfoItem(
                             icon = Icons.Outlined.CalendarToday,
                             label = "Age",
-                            value = "34 years"
+                            value = if (age != null) "$age years" else "Not set"
                         )
                         Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color.LightGray.copy(alpha = 0.3f))
                         
                         ProfileInfoItem(
                             icon = Icons.Outlined.People,
                             label = "Gender",
-                            value = "Female"
+                            value = gender
                         )
                         Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color.LightGray.copy(alpha = 0.3f))
                         
                         ProfileInfoItem(
                             icon = Icons.Outlined.MedicalServices,
                             label = "Specialization",
-                            value = "General Physician"
+                            value = specialization
                         )
                     }
                 }
@@ -202,7 +251,7 @@ fun DoctorProfileScreen(
                         ProfileInfoItem(
                             icon = Icons.Outlined.Email,
                             label = "Email Address",
-                            value = "sarah.johnson@gmail.com",
+                            value = email,
                             isProtected = true
                         )
                         Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color.LightGray.copy(alpha = 0.3f))
@@ -210,7 +259,7 @@ fun DoctorProfileScreen(
                         ProfileInfoItem(
                             icon = Icons.Outlined.Badge,
                             label = "Doctor ID",
-                            value = "DOC-2024-8756",
+                            value = userId,
                             isProtected = true
                         )
                     }

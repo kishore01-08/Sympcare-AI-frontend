@@ -3,7 +3,6 @@ package com.simats.sympcareai
 import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -12,10 +11,8 @@ import android.speech.tts.TextToSpeech
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,14 +21,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -39,79 +34,115 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
+import com.simats.sympcareai.network.RetrofitClient
+import com.simats.sympcareai.data.response.QuestionsResponse
+import com.simats.sympcareai.data.response.AIAnalysisResponse
+import kotlinx.coroutines.launch
+import retrofit2.Response
 
-// Data class for chat messages
 data class VoiceMessage(val text: String, val isUser: Boolean)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun VoiceAssistantScreen(
     onBackClick: () -> Unit,
     onNavigateTo: (Screen) -> Unit,
-    selectedSymptoms: List<String> = emptyList()
+    onAnalyseClick: (AIAnalysisResponse) -> Unit,
+    selectedSymptoms: List<String> = emptyList(),
+    patientId: String = "",
+    sessionId: Int = -1
 ) {
     val context = LocalContext.current
     var isListening by remember { mutableStateOf(false) }
     
-    // Conversation State
     val messages = remember { mutableStateListOf<VoiceMessage>() }
     val listState = rememberLazyListState()
 
-    // Questionnaire Logic
-    val questions = remember {
-        listOf(
-            "How long have you been experiencing these symptoms?",
-            "On a scale of 1 to 10, how severe is the pain?",
-            "Do you have any known allergies?",
-            "Are you currently taking any medications?",
-            "Thank you. I have gathered your information. You can now click on Analyse to proceed."
-        )
-    }
+    var questions by remember { mutableStateOf<List<String>>(emptyList()) }
     var currentQuestionIndex by remember { mutableIntStateOf(0) }
+    var isLoadingQuestions by remember { mutableStateOf(true) }
     
+    val collectedAnswers = remember { mutableStateMapOf<String, String>() }
+
+    var isAnalyzing by remember { mutableStateOf(false) }
+    var analysisError by remember { mutableStateOf<String?>(null) }
+
+    val scope = rememberCoroutineScope()
+
+    fun performAnalysis() {
+        isAnalyzing = true
+        analysisError = null
+        
+        val request = mapOf(
+            "patient_id" to patientId,
+            "symptoms" to selectedSymptoms,
+            "answers" to collectedAnswers.toMap()
+        )
+        
+        scope.launch {
+            try {
+                val response = RetrofitClient.apiService.analyzeAI(request)
+                isAnalyzing = false
+                if (response.isSuccessful && response.body() != null) {
+                    onAnalyseClick(response.body()!!)
+                } else {
+                    analysisError = "Analysis failed: ${response.code()}"
+                }
+            } catch (e: Exception) {
+                isAnalyzing = false
+                analysisError = "Network error: ${e.message}"
+            }
+        }
+    }
+
     var speechRecognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
     var tts by remember { mutableStateOf<TextToSpeech?>(null) }
 
-    // Helper to speak and add message
     fun speakAndAddMessage(text: String) {
-        if (!messages.any { !it.isUser && it.text == text }) { // Prevent duplicates on recomposition
+        if (!messages.any { !it.isUser && it.text == text }) { 
              messages.add(VoiceMessage(text, isUser = false))
              speakText(tts, text)
         }
     }
 
-    // Initialize TTS
     LaunchedEffect(Unit) {
-        tts = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.US
-                // Speak first question after init
-                if (messages.isEmpty()) {
-                     val initialGreeting = "I see you have selected ${selectedSymptoms.joinToString(", ")}. ${questions[0]}"
-                     speakAndAddMessage(initialGreeting)
+        val request = mapOf(
+            "patient_id" to patientId,
+            "symptoms" to selectedSymptoms
+        )
+        isLoadingQuestions = true
+        try {
+            val response = RetrofitClient.apiService.getQuestions(request)
+            if (response.isSuccessful) {
+                questions = response.body()?.questions ?: emptyList()
+            }
+        } catch (e: Exception) {
+            // Ignore failure for questions
+        }
+        isLoadingQuestions = false
+    }
+
+    LaunchedEffect(isLoadingQuestions) {
+        if (!isLoadingQuestions && tts == null) {
+            tts = TextToSpeech(context) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    tts?.language = Locale.US
+                    if (messages.isEmpty() && questions.isNotEmpty()) {
+                        val symptomText = if (selectedSymptoms.isNotEmpty()) " for ${selectedSymptoms.joinToString(", ")}" else ""
+                        val initialGreeting = "Hello! I'm here to help with your symptoms$symptomText. ${questions[0]}"
+                        speakAndAddMessage(initialGreeting)
+                    }
                 }
             }
         }
     }
     
-    // Auto-scroll to bottom
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
 
-    // File Picker Launcher
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            messages.add(VoiceMessage("Attached file: ${uri.lastPathSegment}", isUser = true))
-             speakAndAddMessage("I've received your file. Analyzing it now.")
-        }
-    }
-
-    // Permission Launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { isGranted ->
@@ -123,41 +154,29 @@ fun VoiceAssistantScreen(
         }
     )
 
-
-
-    fun analyzeSymptoms(symptoms: List<String>): String {
-        return when {
-            symptoms.contains("Fever") && symptoms.contains("Cough") -> "You might be experiencing a Viral Infection or Flu. Stay hydrated and rest."
-            symptoms.contains("Headache") && symptoms.contains("Nausea") -> "This could be a Migraine. Avoid bright lights and noise."
-            symptoms.contains("Chest Pain") -> "Chest pain can be serious. Please seek immediate medical attention."
-            symptoms.contains("Stomach Ache") -> "It could be Indigestion or Gastritis. Avoid spicy food."
-            symptoms.contains("Skin Rash") -> "This might be an Allergic Reaction. Avoid potential allergens."
-            symptoms.isNotEmpty() -> "You have reported ${symptoms.joinToString(", ")}. This requires further clinical evaluation."
-            else -> "I need more information to analyze your condition."
-        }
-    }
-
     fun processUserResponse(text: String) {
         if (text.isNotBlank()) {
             messages.add(VoiceMessage(text, isUser = true))
             
-            // Advance to next question
+            if (currentQuestionIndex < questions.size) {
+                val q = questions[currentQuestionIndex]
+                when {
+                    q.contains("severe", ignoreCase = true) || q.contains("1 to 10", ignoreCase = true) -> collectedAnswers["pain"] = text
+                    q.contains("how many days", ignoreCase = true) || q.contains("how long", ignoreCase = true) -> collectedAnswers["days"] = text
+                    else -> collectedAnswers["q_${currentQuestionIndex}"] = text
+                }
+            }
+
             if (currentQuestionIndex < questions.size - 1) {
                 currentQuestionIndex++
                  val nextQuestion = questions[currentQuestionIndex]
                  speakAndAddMessage(nextQuestion)
             } else {
-                // End of flow - ANALYZE SYMPTOMS
-                val analysis = analyzeSymptoms(selectedSymptoms)
-                 speakAndAddMessage("Based on your symptoms: $analysis")
-                 speakAndAddMessage("Please click Analyse to view your detailed report, or consult a doctor for a medical diagnosis.")
+                speakAndAddMessage("Thank you. I have gathered all the information needed for analysis. Please click Analyse to view your report.")
             }
         }
     }
 
-
-
-    // Initialize Speech Recognizer
     DisposableEffect(Unit) {
         val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
         speechRecognizer = recognizer
@@ -167,19 +186,12 @@ fun VoiceAssistantScreen(
             override fun onBeginningOfSpeech() {}
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {
-                isListening = false
-            }
-            override fun onError(error: Int) {
-                isListening = false
-                // Optional: Handle error silently or show toast
-            }
+            override fun onEndOfSpeech() { isListening = false }
+            override fun onError(error: Int) { isListening = false }
             override fun onResults(results: Bundle?) {
                 isListening = false
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                if (!matches.isNullOrEmpty()) {
-                    processUserResponse(matches[0])
-                }
+                if (!matches.isNullOrEmpty()) { processUserResponse(matches[0]) }
             }
             override fun onPartialResults(partialResults: Bundle?) {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -194,35 +206,20 @@ fun VoiceAssistantScreen(
         }
     }
 
-    // Listening Popup Dialog
     if (isListening) {
         AlertDialog(
             onDismissRequest = {
                 stopListening(speechRecognizer)
                 isListening = false
             },
-            icon = {
-                Icon(Icons.Default.Mic, contentDescription = null, tint = Color(0xFF009688))
-            },
-            title = {
-                Text(text = "Listening...")
-            },
-            text = {
-                Text(
-                    text = "Please speak now. Tap Stop to finish.",
-                    modifier = Modifier.fillMaxWidth(),
-                    
-                )
-            },
+            icon = { Icon(Icons.Default.Mic, contentDescription = null, tint = Color(0xFF009688)) },
+            title = { Text(text = "Listening...") },
+            text = { Text(text = "Please speak now. Tap Stop to finish.", modifier = Modifier.fillMaxWidth()) },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        stopListening(speechRecognizer)
-                        isListening = false
-                    }
-                ) {
-                    Text("Stop")
-                }
+                TextButton(onClick = {
+                    stopListening(speechRecognizer)
+                    isListening = false
+                }) { Text("Stop") }
             },
             containerColor = Color.White
         )
@@ -231,38 +228,12 @@ fun VoiceAssistantScreen(
     Scaffold(
         bottomBar = {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .imePadding(), // Ensure it moves with keyboard if needed
+                modifier = Modifier.fillMaxWidth().padding(16.dp).imePadding(),
                 contentAlignment = Alignment.Center
             ) {
-                // Attachment Button
-                IconButton(
-                    onClick = { launcher.launch("*/*") },
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .background(Color(0xFFF5F5F5), CircleShape) // Light Gray
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AttachFile,
-                        contentDescription = "Attach File",
-                        tint = Color(0xFF009688) // Teal
-                    )
-                }
-
-                // Initial Mic Button (Compact)
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     if (!isListening) {
-                        Text(
-                            text = "Tap to Speak",
-                            fontSize = 12.sp,
-                            color = Color.Gray,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
+                        Text(text = "Tap to Speak", fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(bottom = 8.dp))
                     }
                     IconButton(
                         onClick = {
@@ -273,10 +244,7 @@ fun VoiceAssistantScreen(
                                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             }
                         },
-                        modifier = Modifier
-                            .size(64.dp) // Compact size
-                            .background(Color.White, CircleShape)
-                            .border(1.dp, Color(0xFF009688), CircleShape)
+                        modifier = Modifier.size(64.dp).background(Color.White, CircleShape).border(1.dp, Color(0xFF009688), CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
@@ -291,25 +259,15 @@ fun VoiceAssistantScreen(
         containerColor = Color.White
     ) { paddingValues ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFF6E48AA), Color(0xFF9D50BB).copy(alpha = 0.1f))
-                    )
-                )
+            modifier = Modifier.fillMaxSize().padding(paddingValues).background(
+                brush = Brush.verticalGradient(colors = listOf(Color(0xFF6E48AA), Color(0xFF9D50BB).copy(alpha = 0.1f)))
+            )
         ) {
-            // App Bar
             CenterAlignedTopAppBar(
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Voice Assistant", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
-                        if (isListening) {
-                            Text("Listening...", fontSize = 12.sp, color = Color(0xFF00E676))
-                        } else {
-                            Text("Online", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-                        }
+                        Text(if (isListening) "Listening..." else "Online", fontSize = 12.sp, color = if (isListening) Color(0xFF00E676) else Color.White.copy(alpha = 0.7f))
                     }
                 },
                 navigationIcon = {
@@ -319,82 +277,53 @@ fun VoiceAssistantScreen(
                 },
                 actions = {
                     Button(
-                        onClick = { onNavigateTo(Screen.ReportAnalysis) },
+                        onClick = { performAnalysis() },
+                        enabled = !isAnalyzing,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
-                        Text("Analyse", color = Color.Black, fontSize = 12.sp)
+                        if (isAnalyzing) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black, strokeWidth = 2.dp)
+                        } else {
+                            Text("Analyse", color = Color.Black, fontSize = 12.sp)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent)
             )
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Selected Symptoms Display
+            Column(modifier = Modifier.weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (selectedSymptoms.isNotEmpty()) {
                     Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-                        Text(
-                            text = "Selected Context:", 
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            selectedSymptoms.forEach { symptom ->
-                                Surface(
-                                    color = Color.White.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f))
-                                ) {
-                                    Text(
-                                        text = symptom,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        fontSize = 12.sp,
-                                        color = Color.White
-                                    )
-                                }
+                        Text(text = "Selected Context:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(bottom = 8.dp))
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                            selectedSymptoms.forEach { symptom -> 
+                                SuggestionChip(onClick = {}, label = { Text(symptom, fontSize = 10.sp, color = Color.White) }, colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color.White.copy(alpha = 0.2f)), border = null)
                             }
                         }
                     }
                 }
 
-                // Dynamic Response List
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 16.dp)
-                ) {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
                     items(messages) { message ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
-                        ) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start) {
                             Surface(
                                 color = if (message.isUser) Color(0xFF009688) else Color.White,
-                                shape = RoundedCornerShape(
-                                    topStart = 16.dp, 
-                                    topEnd = 16.dp,
-                                    bottomStart = if (message.isUser) 16.dp else 4.dp,
-                                    bottomEnd = if (message.isUser) 4.dp else 16.dp
-                                ),
+                                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = if (message.isUser) 16.dp else 4.dp, bottomEnd = if (message.isUser) 4.dp else 16.dp),
                                 modifier = Modifier.widthIn(max = 280.dp)
-                            ) {
-                                Text(
-                                    text = message.text,
-                                    modifier = Modifier.padding(16.dp),
-                                    color = if (message.isUser) Color.White else Color.Black
-                                )
+                            ) { Text(text = message.text, modifier = Modifier.padding(16.dp), color = if (message.isUser) Color.White else Color.Black) }
+                        }
+                    }
+
+                    if (isAnalyzing) {
+                        item { Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { Box(modifier = Modifier.padding(16.dp)) { CircularProgressIndicator(color = Color.White) } } }
+                    }
+
+                    if (analysisError != null) {
+                        item {
+                            Surface(color = Color.White.copy(alpha = 0.9f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                Text(text = analysisError!!, color = Color.Red, modifier = Modifier.padding(16.dp), fontSize = 14.sp)
                             }
                         }
                     }
@@ -404,11 +333,7 @@ fun VoiceAssistantScreen(
     }
 }
 
-private fun startListening(
-    context: Context,
-    speechRecognizer: SpeechRecognizer?,
-    onListeningStarted: () -> Unit
-) {
+private fun startListening(context: Context, speechRecognizer: SpeechRecognizer?, onListeningStarted: () -> Unit) {
     val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
@@ -417,10 +342,5 @@ private fun startListening(
     onListeningStarted()
 }
 
-private fun stopListening(speechRecognizer: SpeechRecognizer?) {
-    speechRecognizer?.stopListening()
-}
-
-private fun speakText(tts: TextToSpeech?, text: String) {
-    tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
-}
+private fun stopListening(speechRecognizer: SpeechRecognizer?) { speechRecognizer?.stopListening() }
+private fun speakText(tts: TextToSpeech?, text: String) { tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null) }

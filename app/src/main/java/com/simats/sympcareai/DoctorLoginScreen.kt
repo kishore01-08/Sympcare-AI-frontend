@@ -31,17 +31,32 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @Composable
 fun DoctorLoginScreen(
     onSignUpClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: (String, String) -> Unit
 ) {
     var doctorId by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var rememberMe by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferenceManager = remember { com.simats.sympcareai.utils.PreferenceManager(context) }
+
+    // Load saved credentials
+    LaunchedEffect(Unit) {
+        val (savedId, savedPass, isRemembered) = preferenceManager.getDoctorCredentials()
+        if (isRemembered) {
+            doctorId = savedId
+            password = savedPass
+            rememberMe = true
+        }
+    }
 
     // Purple Gradient Background
     val backgroundBrush = Brush.verticalGradient(
@@ -109,7 +124,7 @@ fun DoctorLoginScreen(
                     }
                 },
                 label = { Text("Doctor ID") },
-                placeholder = { Text("Enter your ID") },
+                placeholder = { Text("Enter your ID (Numbers only)") },
                 leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF6A5ACD)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
@@ -169,14 +184,40 @@ fun DoctorLoginScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Forgot Password
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            // Remember Me and Forgot Password Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = rememberMe,
+                        onCheckedChange = { rememberMe = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = White,
+                            uncheckedColor = White.copy(alpha = 0.6f),
+                            checkmarkColor = Color(0xFF6A5ACD)
+                        )
+                    )
+                    Text(
+                        text = "Remember Me",
+                        color = Color(0xFF3E2723),
+                        fontSize = 14.sp,
+                        modifier = Modifier.clickable { rememberMe = !rememberMe }
+                    )
+                }
+
                 TextButton(onClick = onForgotPasswordClick) {
                     Text("Forgot password?", color = Color(0xFF3E2723)) // Dark text
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            val scope = rememberCoroutineScope()
+            val context = androidx.compose.ui.platform.LocalContext.current
+            var isLoading by remember { mutableStateOf(false) }
 
             // Sign In Button
             Button(
@@ -186,7 +227,56 @@ fun DoctorLoginScreen(
                     } else if (password.isEmpty()) {
                         errorMessage = "Please enter Password"
                     } else {
-                        onLoginSuccess()
+                        errorMessage = ""
+                        isLoading = true
+                        
+                        scope.launch {
+                            try {
+                                val request = com.simats.sympcareai.data.request.DoctorLoginRequest(
+                                    docId = doctorId,
+                                    password = password
+                                )
+                                val apiResponse = com.simats.sympcareai.network.RetrofitClient.apiService.loginDoctor(request)
+                                
+                                isLoading = false
+                                if (apiResponse.isSuccessful) {
+                                    val response = apiResponse.body()
+                                    if (response?.status == "login_success") {
+                                        // Save credentials if Remember Me is checked
+                                        preferenceManager.saveDoctorCredentials(doctorId, password, rememberMe)
+                                        
+                                        android.widget.Toast.makeText(context, "Login Successful", android.widget.Toast.LENGTH_SHORT).show()
+                                        val did = response.doctor ?: doctorId
+                                        val name = response.fullName ?: "Doctor"
+                                        onLoginSuccess(did, name)
+                                    } else {
+                                        errorMessage = response?.error ?: "Login failed"
+                                    }
+                                } else {
+                                    val errorBody = apiResponse.errorBody()?.string()
+                                    try {
+                                        val errorJson = org.json.JSONObject(errorBody ?: "{}")
+                                        errorMessage = errorJson.optString("error", "Login failed (Server error)")
+                                    } catch (e: Exception) {
+                                        errorMessage = "Login failed: ${apiResponse.message()}"
+                                    }
+                                }
+                            } catch (e: retrofit2.HttpException) {
+                                isLoading = false
+                                val errorBody = e.response()?.errorBody()?.string()
+                                try {
+                                    val errorJson = org.json.JSONObject(errorBody ?: "{}")
+                                    errorMessage = errorJson.optString("error", "Login failed")
+                                } catch (jsonException: Exception) {
+                                    errorMessage = "Login failed: ${e.code()}"
+                                }
+                                android.util.Log.e("DoctorLogin", "HTTP Error: ${e.code()} - $errorBody")
+                            } catch (e: Exception) {
+                                isLoading = false
+                                errorMessage = "Error: ${e.message}"
+                                android.util.Log.e("DoctorLogin", "Login failed", e)
+                            }
+                        }
                     }
                 },
                 modifier = Modifier
@@ -196,9 +286,14 @@ fun DoctorLoginScreen(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF6A5ACD) // SlateBlue
                 ),
-                shape = RoundedCornerShape(25.dp)
+                shape = RoundedCornerShape(25.dp),
+                enabled = !isLoading
             ) {
-                Text("Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                if (isLoading) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                } else {
+                    Text("Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -208,7 +303,7 @@ fun DoctorLoginScreen(
                 Text("Don't have an account? ", color = Color(0xFF424242))
                 Text(
                     text = "Sign Up",
-                    color = White,
+                    color = Color.White,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable { onSignUpClick() }
                 )

@@ -1,10 +1,8 @@
 package com.simats.sympcareai
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,7 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -22,9 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,11 +29,12 @@ fun DoctorHomeScreen(
     onChatClick: () -> Unit,
     onNavigateTo: (Screen) -> Unit,
     onProfileClick: () -> Unit,
-    onNotificationClick: () -> Unit,
     onPatientsTodayClick: () -> Unit,
     onCompletedPatientsClick: () -> Unit,
-    patientsTodayCount: Int = 24, // Default value for preview/fallback
-    completedPatientsCount: Int = 18 // Default value
+    patients: List<DoctorPatient> = emptyList(),
+    doctorName: String = "Dr. Sarah Johnson",
+    patientsTodayCount: Int = 24, 
+    completedPatientsCount: Int = 18 
 ) {
     Scaffold(
         bottomBar = {
@@ -97,21 +92,13 @@ fun DoctorHomeScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Dr. Sarah Johnson",
+                                text = if (doctorName.startsWith("Dr.")) doctorName else "Dr. $doctorName",
                                 color = Color.White,
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                         
-                        // Notification Icon
-                        IconButton(onClick = onNotificationClick) {
-                            Icon(
-                                imageVector = Icons.Default.Notifications,
-                                contentDescription = "Notifications",
-                                tint = Color.White
-                            )
-                        }
                     }
                     
                     Spacer(modifier = Modifier.height(24.dp))
@@ -286,40 +273,30 @@ fun DoctorHomeScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 // Active Patients List
-                ActivePatientCard(
-                    name = "John Doe",
-                    symptom = "Headache",
-                    time = "Now",
-                    status = "Online",
-                    statusColor = Color(0xFFE0F2F1),
-                    statusTextColor = Color(0xFF009688),
-                    initial = "J",
-                    initialBg = Color(0xFF00BFA5)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                ActivePatientCard(
-                    name = "Priya Sharma",
-                    symptom = "Fever",
-                    time = "10m",
-                    status = "Completed",
-                    statusColor = Color(0xFFE8EAF6),
-                    statusTextColor = Color(0xFF3F51B5),
-                    initial = "P",
-                    initialBg = Color(0xFF448AFF)
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                ActivePatientCard(
-                    name = "Alex Chen",
-                    symptom = "Wellness",
-                    time = "15m",
-                    status = "Waiting",
-                    statusColor = Color(0xFFFFF8E1),
-                    statusTextColor = Color(0xFFFF8F00),
-                    initial = "A",
-                    initialBg = Color(0xFFFFB300)
-                )
+                patients.take(5).forEach { patient ->
+                    ActivePatientCard(
+                        name = patient.name,
+                        //symptom = patient.symptom,
+                        time = patient.time,
+                        status = patient.status,
+                        statusColor = patient.statusColor,
+                        statusTextColor = patient.statusTextColor,
+                        initial = patient.initial,
+                        initialBg = patient.initialBg,
+                        showCheckbox = false, // Hidden as per request
+                        onClick = { onNavigateTo(Screen.DoctorPatientDetails(patient.id)) },
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
                 
-                 Spacer(modifier = Modifier.height(24.dp))
+                if (patients.isEmpty()) {
+                    Text(
+                        text = "No patients viewed yet.",
+                        color = Color.Gray,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }

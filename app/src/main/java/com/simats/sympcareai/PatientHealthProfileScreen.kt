@@ -23,19 +23,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalContext
+import retrofit2.Response
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PatientHealthProfileScreen(
+    patientId: String,
+    initialFullName: String = "",
     onBackClick: () -> Unit,
     onSaveClick: () -> Unit
 ) {
-    var fullName by remember { mutableStateOf("") }
+    var fullName by remember { mutableStateOf(initialFullName) }
     var age by remember { mutableStateOf("") }
+    var gender by remember { mutableStateOf("Male") } // Default to Male
     var height by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
     var bloodGroup by remember { mutableStateOf("A+") }
     var expanded by remember { mutableStateOf(false) }
+
+    // Custom Condition States
+    var showCustomConditionDialog by remember { mutableStateOf(false) }
+    var customConditionText by remember { mutableStateOf("") }
 
     val bloodGroups = listOf("A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-")
 
@@ -43,6 +53,43 @@ fun PatientHealthProfileScreen(
     val conditions = listOf("Diabetes", "Hypertension", "Asthma", "Heart Disease", "Thyroid", "Arthritis")
     val selectedConditions = remember { mutableStateListOf<String>() }
     var showSuccessDialog by remember { mutableStateOf(false) }
+    
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Custom Condition Dialog
+    if (showCustomConditionDialog) {
+        AlertDialog(
+            onDismissRequest = { showCustomConditionDialog = false },
+            title = { Text("Add Condition") },
+            text = {
+                OutlinedTextField(
+                    value = customConditionText,
+                    onValueChange = { customConditionText = it },
+                    label = { Text("Condition Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (customConditionText.isNotBlank()) {
+                        selectedConditions.add(customConditionText.trim())
+                        customConditionText = ""
+                        showCustomConditionDialog = false
+                    }
+                }) {
+                    Text("Add", color = Color(0xFF009688))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomConditionDialog = false }) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            containerColor = Color.White
+        )
+    }
 
     // Success Dialog Logic
     if (showSuccessDialog) {
@@ -57,7 +104,7 @@ fun PatientHealthProfileScreen(
                         modifier = Modifier.size(48.dp)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Registration Successful", fontWeight = FontWeight.Bold, color = Color.Black)
+                    Text("Profile Created", fontWeight = FontWeight.Bold, color = Color.Black)
                 }
             },
             text = {
@@ -130,8 +177,12 @@ fun PatientHealthProfileScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
-                    // Full Name
-                    Text("Full Name *", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    // Full Name (Optional binding if API supported it, but API request just has age/height/weight etc. 
+                    // Actually checking ProfileRequests.kt: PatientHealthProfileRequest(patientId, age, height, weight, bloodGroup, existingConditions)
+                    // Full Name is not in the request, probably stored in PatientUser model during signup.
+                    // We can collect it but not send it, or assume it's just for UI.)
+                    
+                    Text("Full Name * (Display Only)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
@@ -158,6 +209,7 @@ fun PatientHealthProfileScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(8.dp),
                         singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                         trailingIcon = { Text("years", modifier = Modifier.padding(end = 16.dp), color = Color.Gray) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.Black,
@@ -165,6 +217,38 @@ fun PatientHealthProfileScreen(
                             cursorColor = Color.Black
                         )
                     )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Gender
+                    Text("Gender *", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        listOf("Male", "Female", "Other").forEach { option ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clickable { gender = option }
+                                    .padding(9.dp)
+                            ) {
+                                RadioButton(
+                                    selected = (gender == option),
+                                    onClick = { gender = option },
+                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF009688))
+                                )
+                                Text(
+                                    text = option,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -179,10 +263,11 @@ fun PatientHealthProfileScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(8.dp),
                                 singleLine = true,
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                                 trailingIcon = {
                                     Surface(color = Color(0xFF009688), shape = RoundedCornerShape(4.dp), modifier = Modifier.size(24.dp)) {
                                         Box(contentAlignment = Alignment.Center) {
-                                            Text("ft", color = Color.White, fontSize = 12.sp)
+                                            Text("cm", color = Color.White, fontSize = 12.sp)
                                         }
                                     }
                                 },
@@ -202,6 +287,7 @@ fun PatientHealthProfileScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(8.dp),
                                 singleLine = true,
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                                 trailingIcon = {
                                     Surface(color = Color(0xFF009688), shape = RoundedCornerShape(4.dp), modifier = Modifier.size(24.dp)) {
                                         Box(contentAlignment = Alignment.Center) {
@@ -289,11 +375,11 @@ fun PatientHealthProfileScreen(
                         }
                         // Custom Condition Chip
                         SuggestionChip(
-                            onClick = { /* TODO: Add custom condition dialog */ },
+                            onClick = { showCustomConditionDialog = true },
                             label = { Text("Add custom condition", color = Color(0xFF009688)) },
-                            icon = { Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF009688)) },
+                            border = BorderStroke(1.dp, Color(0xFF009688)),
                             shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.dp, Color(0xFF009688))
+                            colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color.White)
                         )
                     }
 
@@ -327,8 +413,38 @@ fun PatientHealthProfileScreen(
             // Save Button
             Button(
                 onClick = {
-                    if (fullName.isNotEmpty() && age.isNotEmpty()) { // Basic validation
-                        showSuccessDialog = true
+                    if (age.isNotEmpty() && height.isNotEmpty() && weight.isNotEmpty() && bloodGroup.isNotEmpty()) {
+                       kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                           try {
+                               val request = com.simats.sympcareai.data.request.PatientHealthProfileRequest(
+                                   patientId = patientId,
+                                   age = age.toIntOrNull() ?: 0,
+                                   gender = gender,
+                                   height = height.toFloatOrNull() ?: 0f,
+                                   weight = weight.toFloatOrNull() ?: 0f,
+                                   bloodGroup = bloodGroup,
+                                   existingConditions = selectedConditions.joinToString(", ")
+                               )
+                               
+                               val response = com.simats.sympcareai.network.RetrofitClient.apiService.createHealthProfile(request)
+                               
+                               if (response.isSuccessful) {
+                                   val body = response.body()
+                                   if (body?.status == "profile_saved") {
+                                       showSuccessDialog = true
+                                   } else {
+                                       android.widget.Toast.makeText(context, body?.error ?: "Failed to save profile", android.widget.Toast.LENGTH_SHORT).show()
+                                   }
+                               } else {
+                                   android.widget.Toast.makeText(context, "Server Error: ${response.code()}", android.widget.Toast.LENGTH_SHORT).show()
+                               }
+                           } catch (e: Exception) {
+                               android.util.Log.e("HealthProfile", "Error: ${e.message}", e)
+                               android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                           }
+                       }
+                    } else {
+                         android.widget.Toast.makeText(context, "Please fill all required fields", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier

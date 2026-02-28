@@ -31,17 +31,32 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @Composable
 fun PatientLoginScreen(
     onSignUpClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: (String, String) -> Unit
 ) {
     var patientId by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var rememberMe by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferenceManager = remember { com.simats.sympcareai.utils.PreferenceManager(context) }
+
+    // Load saved credentials
+    LaunchedEffect(Unit) {
+        val (savedId, savedPass, isRemembered) = preferenceManager.getPatientCredentials()
+        if (isRemembered) {
+            patientId = savedId
+            password = savedPass
+            rememberMe = true
+        }
+    }
 
     // Teal/Blue Gradient Background
     val backgroundBrush = Brush.verticalGradient(
@@ -150,8 +165,30 @@ fun PatientLoginScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Forgot Password
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            // Remember Me and Forgot Password Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = rememberMe,
+                        onCheckedChange = { rememberMe = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = White,
+                            uncheckedColor = White.copy(alpha = 0.6f),
+                            checkmarkColor = Color(0xFF009688)
+                        )
+                    )
+                    Text(
+                        text = "Remember Me",
+                        color = Color(0xFF3E2723),
+                        fontSize = 14.sp,
+                        modifier = Modifier.clickable { rememberMe = !rememberMe }
+                    )
+                }
+                
                 TextButton(onClick = onForgotPasswordClick) {
                     Text("Forgot password?", color = Color(0xFF3E2723))
                 }
@@ -169,6 +206,11 @@ fun PatientLoginScreen(
                 )
             }
 
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+            var isLoading by remember { mutableStateOf(false) }
+
             // Sign In Button
             Button(
                 onClick = { 
@@ -178,9 +220,56 @@ fun PatientLoginScreen(
                         errorMessage = "Please enter Password"
                     } else {
                         errorMessage = ""
-                        onLoginSuccess()
+                        isLoading = true
+                        
+                        scope.launch {
+                            try {
+                                val request = com.simats.sympcareai.data.request.PatientLoginRequest(
+                                    patientId = patientId,
+                                    password = password
+                                )
+                                val apiResponse = com.simats.sympcareai.network.RetrofitClient.apiService.loginPatient(request)
+                                
+                                isLoading = false
+                                if (apiResponse.isSuccessful) {
+                                    val response = apiResponse.body()
+                                    if (response?.status == "login_success") {
+                                        // Save credentials if Remember Me is checked
+                                        preferenceManager.savePatientCredentials(patientId, password, rememberMe)
+                                        
+                                        android.widget.Toast.makeText(context, "Login Successful", android.widget.Toast.LENGTH_SHORT).show()
+                                        val pid = response.patientId ?: patientId
+                                        val name = response.fullName ?: "Patient"
+                                        onLoginSuccess(pid, name)
+                                    } else {
+                                        errorMessage = response?.error ?: "Login failed"
+                                    }
+                                } else {
+                                    val errorBody = apiResponse.errorBody()?.string()
+                                    try {
+                                        val errorJson = org.json.JSONObject(errorBody ?: "{}")
+                                        errorMessage = errorJson.optString("error", "Login failed (Server error)")
+                                    } catch (e: Exception) {
+                                        errorMessage = "Login failed: ${apiResponse.message()}"
+                                    }
+                                }
+                            } catch (e: retrofit2.HttpException) {
+                                isLoading = false
+                                val errorBody = e.response()?.errorBody()?.string()
+                                try {
+                                    val errorJson = org.json.JSONObject(errorBody ?: "{}")
+                                    errorMessage = errorJson.optString("error", "Login failed")
+                                } catch (jsonException: Exception) {
+                                    errorMessage = "Login failed: ${e.code()}"
+                                }
+                                android.util.Log.e("Login", "HTTP Error: ${e.code()} - $errorBody")
+                            } catch (e: Exception) {
+                                isLoading = false
+                                errorMessage = "Error: ${e.message}"
+                                android.util.Log.e("Login", "Login failed", e)
+                            }
+                        }
                     }
-
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -189,9 +278,14 @@ fun PatientLoginScreen(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF009688) // Teal
                 ),
-                shape = RoundedCornerShape(25.dp)
+                shape = RoundedCornerShape(25.dp),
+                enabled = !isLoading
             ) {
-                Text("Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                if (isLoading) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                } else {
+                    Text("Sign In", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))

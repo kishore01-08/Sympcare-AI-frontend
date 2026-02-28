@@ -147,14 +147,6 @@ fun DoctorSettingsScreen(
                             onClick = { onNavigateTo(Screen.DoctorAccountSettings) }
                         )
 
-                        SettingsMenuItem(
-                            icon = Icons.Outlined.Notifications,
-                            title = "Notifications",
-                            subtitle = "Manage app alerts and sounds",
-                            iconBgColor = Color(0xFFFFE0B2), // Light Orange
-                            iconColor = Color(0xFFF57C00),
-                            onClick = { onNavigateTo(Screen.NotificationSettings) }
-                        )
 
                          SettingsMenuItem(
                             icon = Icons.Outlined.Info,

@@ -35,13 +35,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Imports needed
+import kotlinx.coroutines.launch
+import retrofit2.Response
 import com.simats.sympcareai.ui.OtpVerificationDialog
 
 @Composable
 fun PatientSignUpScreen(
     onSignInClick: () -> Unit,
-    onSignUpSuccess: () -> Unit
+    onSignUpSuccess: (String, String) -> Unit
 ) {
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
@@ -63,19 +64,37 @@ fun PatientSignUpScreen(
     )
 
     val clipboardManager = LocalClipboardManager.current
+    // Coroutine Scope
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     if (showOtpDialog) {
         OtpVerificationDialog(
             onDismiss = { showOtpDialog = false },
             onVerify = { otp ->
-                // Simulate verification
-                // Accepting any 6-digit code for testing ease
-                if (otp.length == 6) {
-                    showOtpDialog = false
-                    // Generate 9-digit Patient ID
-                    generatedPatientId = (100000000..999999999).random().toString()
-                    showSuccessDialog = true 
+                scope.launch {
+                    try {
+                        val request = com.simats.sympcareai.data.request.VerifyOtpRequest(
+                            email = email,
+                            otp = otp
+                        )
+                        val response = com.simats.sympcareai.network.RetrofitClient.apiService.verifyPatientOtp(request)
+                        if (response.isSuccessful) {
+                            val body = response.body()
+                            if (body?.status == "otp_verified") {
+                                // Backend returns patient_id
+                                generatedPatientId = body.patientId ?: "Error"
+                                showOtpDialog = false
+                                showSuccessDialog = true
+                            } else {
+                                Toast.makeText(context, body?.error ?: "Verification failed", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Server Error: ${response.code()}", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
                 }
             },
             primaryColor = Color(0xFF009688)
@@ -142,7 +161,7 @@ fun PatientSignUpScreen(
                 Button(
                     onClick = {
                         showSuccessDialog = false
-                        onSignUpSuccess()
+                    onSignUpSuccess(generatedPatientId, fullName)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688)),
                     modifier = Modifier.fillMaxWidth()
@@ -251,13 +270,90 @@ fun PatientSignUpScreen(
                 )
             )
 
+            // Password Requirements Box
+            if (password.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Password Requirements",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color(0xFF00796B)
+                        )
+                        com.simats.sympcareai.ui.RequirementItem(
+                            text = "At least 8 characters",
+                            isMet = com.simats.sympcareai.utils.ValidationUtils.hasMinLength(password)
+                        )
+                        com.simats.sympcareai.ui.RequirementItem(
+                            text = "One uppercase letter",
+                            isMet = com.simats.sympcareai.utils.ValidationUtils.hasUpperCase(password)
+                        )
+                        com.simats.sympcareai.ui.RequirementItem(
+                            text = "One number",
+                            isMet = com.simats.sympcareai.utils.ValidationUtils.hasDigit(password)
+                        )
+                        com.simats.sympcareai.ui.RequirementItem(
+                            text = "One special character",
+                            isMet = com.simats.sympcareai.utils.ValidationUtils.hasSpecialChar(password)
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
 
             // Continue Button
             Button(
-                onClick = { 
-                    if (fullName.isNotEmpty() && email.isNotEmpty() && password.isNotEmpty()) {
-                        showOtpDialog = true
+                onClick = {
+                    if (fullName.isNotEmpty() && email.isNotEmpty() && password.isNotEmpty() && phoneNumber.isNotEmpty()) {
+                        if (!com.simats.sympcareai.utils.ValidationUtils.isValidGmail(email)) {
+                            Toast.makeText(context, com.simats.sympcareai.utils.ValidationUtils.getEmailErrorMessage(), Toast.LENGTH_LONG).show()
+                        } else if (!com.simats.sympcareai.utils.ValidationUtils.isValidPassword(password)) {
+                            Toast.makeText(context, com.simats.sympcareai.utils.ValidationUtils.getPasswordErrorMessage(), Toast.LENGTH_LONG).show()
+                        } else {
+                            scope.launch {
+                                try {
+                                    android.util.Log.d("SignUp", "Attempting registration")
+                                    val request = com.simats.sympcareai.data.request.PatientRegisterRequest(
+                                        fullName = fullName,
+                                        phone = phoneNumber,
+                                        email = email,
+                                        password = password
+                                    )
+                                    val response = com.simats.sympcareai.network.RetrofitClient.apiService.registerPatient(request)
+                                    android.util.Log.d("SignUp", "Response: ${response.code()}, Error: ${response.message()}")
+                                    
+                                    if (response.isSuccessful) {
+                                        val body = response.body()
+                                        if (body?.status == "otp_sent") {
+                                            showOtpDialog = true
+                                        } else {
+                                            Toast.makeText(context, body?.error ?: "Registration failed", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "Server Error: ${response.code()}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: retrofit2.HttpException) {
+                                    val errorBody = e.response()?.errorBody()?.string()
+                                    android.util.Log.e("SignUp", "HTTP Error: ${e.code()} - $errorBody")
+                                    Toast.makeText(context, "Server Error: ${e.code()}", Toast.LENGTH_LONG).show()
+                                } catch (e: Exception) {
+                                    android.util.Log.e("SignUp", "Exception: ${e.message}", e)
+                                    Toast.makeText(context, "Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    } else {
+                        Toast.makeText(context, "Please fill all fields", Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier

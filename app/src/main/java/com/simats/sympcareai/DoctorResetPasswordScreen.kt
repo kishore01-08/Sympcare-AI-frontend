@@ -28,9 +28,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.simats.sympcareai.network.RetrofitClient
+import com.simats.sympcareai.data.request.ForgotPasswordVerifyOtpRequest
+import com.simats.sympcareai.data.request.ResetPasswordRequest
+import com.simats.sympcareai.data.response.GenericStatusResponse
+import retrofit2.Response
+import android.widget.Toast
 
 @Composable
 fun DoctorResetPasswordScreen(
+    email: String,
     onBackClick: () -> Unit,
     onSaveClick: () -> Unit
 ) {
@@ -52,6 +59,7 @@ fun DoctorResetPasswordScreen(
 
     val primaryColor = Color(0xFF6A5ACD) // Purple
     val backgroundColor = Color(0xFFF5F5F5)
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     if (showSuccessDialog) {
@@ -201,14 +209,23 @@ fun DoctorResetPasswordScreen(
                                 onClick = {
                                     if (otp.length == 6) {
                                         isVerifyingOtp = true
-                                        scope.launch {
-                                            delay(1000) // Simulate verify
-                                            // Mock OTP verification logic
+                                        val request = ForgotPasswordVerifyOtpRequest(email, otp)
+                                    scope.launch {
+                                        try {
+                                            val response = RetrofitClient.apiService.doctorForgotPasswordVerifyOtp(request)
                                             isVerifyingOtp = false
-                                            otpVerified = true // Simulate success
-                                            otpError = null
-                                            
+                                            if (response.isSuccessful && response.body()?.status == "otp_verified") {
+                                                otpVerified = true
+                                                otpError = null
+                                            } else {
+                                                otpError = response.body()?.status ?: "Invalid OTP"
+                                                Toast.makeText(context, "Verification failed: $otpError", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } catch (e: Exception) {
+                                            isVerifyingOtp = false
+                                            Toast.makeText(context, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
+                                    }
                                     } else {
                                         otpError = "Enter 6 digits"
                                     }
@@ -264,6 +281,45 @@ fun DoctorResetPasswordScreen(
                             Text(text = newPasswordError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
                         }
 
+                        // Password Requirements Box
+                        if (newPassword.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = backgroundColor.copy(alpha = 0.5f)),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        "Password Requirements",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = primaryColor
+                                    )
+                                    com.simats.sympcareai.ui.RequirementItem(
+                                        text = "At least 8 characters",
+                                        isMet = com.simats.sympcareai.utils.ValidationUtils.hasMinLength(newPassword)
+                                    )
+                                    com.simats.sympcareai.ui.RequirementItem(
+                                        text = "One uppercase letter",
+                                        isMet = com.simats.sympcareai.utils.ValidationUtils.hasUpperCase(newPassword)
+                                    )
+                                    com.simats.sympcareai.ui.RequirementItem(
+                                        text = "One number",
+                                        isMet = com.simats.sympcareai.utils.ValidationUtils.hasDigit(newPassword)
+                                    )
+                                    com.simats.sympcareai.ui.RequirementItem(
+                                        text = "One special character",
+                                        isMet = com.simats.sympcareai.utils.ValidationUtils.hasSpecialChar(newPassword)
+                                    )
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(16.dp))
                         
                         // Confirm Password
@@ -313,8 +369,8 @@ fun DoctorResetPasswordScreen(
                             isValid = false
                         }
                         
-                         if (newPassword.length < 8) {
-                            newPasswordError = "Password must be at least 8 characters"
+                         if (!com.simats.sympcareai.utils.ValidationUtils.isValidPassword(newPassword)) {
+                            newPasswordError = com.simats.sympcareai.utils.ValidationUtils.getPasswordErrorMessage()
                             isValid = false
                         }
 
@@ -325,11 +381,20 @@ fun DoctorResetPasswordScreen(
 
                         if (isValid) {
                             isSaving = true
+                            val request = ResetPasswordRequest(email, newPassword, confirmPassword, otp) // Pass otp here for one-step reset
                             scope.launch {
-                                // Simulate API call
-                                delay(1500)
-                                isSaving = false
-                                showSuccessDialog = true
+                                try {
+                                    val response = RetrofitClient.apiService.doctorResetPassword(request)
+                                    isSaving = false
+                                    if (response.isSuccessful && response.body()?.status == "password_reset_success") {
+                                        showSuccessDialog = true
+                                    } else {
+                                        Toast.makeText(context, "Error: ${response.body()?.status ?: response.message()}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    isSaving = false
+                                    Toast.makeText(context, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     },

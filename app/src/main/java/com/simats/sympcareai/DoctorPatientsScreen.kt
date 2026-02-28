@@ -14,7 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -25,7 +24,6 @@ import androidx.compose.runtime.*
 data class DoctorPatient(
     val id: String,
     val name: String,
-    val symptom: String,
     val time: String,
     val status: String,
     val statusColor: Color,
@@ -145,7 +143,6 @@ fun DoctorPatientsScreen(
                 filteredPatients.forEach { patient ->
                     ActivePatientCard(
                         name = patient.name,
-                        symptom = patient.symptom,
                         time = patient.time,
                         status = patient.status,
                         statusColor = patient.statusColor,
@@ -155,7 +152,7 @@ fun DoctorPatientsScreen(
                         onMarkComplete = {
                             onPatientComplete(patient)
                         }
-                    )
+                    ) { onNavigateTo(Screen.DoctorPatientDetails(patient.id)) }
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             

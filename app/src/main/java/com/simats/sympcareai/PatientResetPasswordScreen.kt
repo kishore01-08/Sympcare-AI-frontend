@@ -28,9 +28,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.simats.sympcareai.network.RetrofitClient
+import com.simats.sympcareai.data.request.ForgotPasswordVerifyOtpRequest
+import com.simats.sympcareai.data.request.ResetPasswordRequest
+import com.simats.sympcareai.data.response.GenericStatusResponse
+import retrofit2.Response
+import android.widget.Toast
 
 @Composable
 fun PatientResetPasswordScreen(
+    email: String,
     onBackClick: () -> Unit,
     onSaveClick: () -> Unit
 ) {
@@ -52,6 +59,7 @@ fun PatientResetPasswordScreen(
 
     val primaryColor = Color(0xFF009688) // Teal
     val backgroundColor = Color(0xFFF5F5F5)
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     if (showSuccessDialog) {
@@ -201,14 +209,23 @@ fun PatientResetPasswordScreen(
                                 onClick = {
                                     if (otp.length == 6) {
                                         isVerifyingOtp = true
-                                        scope.launch {
-                                            delay(1000) // Simulate verify
-                                            // Mock OTP verification logic
+                                        val request = ForgotPasswordVerifyOtpRequest(email, otp)
+                                    scope.launch {
+                                        try {
+                                            val response = RetrofitClient.apiService.forgotPasswordVerifyOtp(request)
                                             isVerifyingOtp = false
-                                            otpVerified = true // Simulate success
-                                            otpError = null
-                                            
+                                            if (response.isSuccessful && response.body()?.status == "otp_verified") {
+                                                otpVerified = true
+                                                otpError = null
+                                            } else {
+                                                otpError = response.body()?.status ?: "Invalid OTP"
+                                                Toast.makeText(context, "Verification failed: $otpError", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } catch (e: Exception) {
+                                            isVerifyingOtp = false
+                                            Toast.makeText(context, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
+                                    }
                                     } else {
                                         otpError = "Enter 6 digits"
                                     }
@@ -313,8 +330,8 @@ fun PatientResetPasswordScreen(
                             isValid = false
                         }
                         
-                         if (newPassword.length < 8) {
-                            newPasswordError = "Password must be at least 8 characters"
+                         if (!com.simats.sympcareai.utils.ValidationUtils.isValidPassword(newPassword)) {
+                            newPasswordError = com.simats.sympcareai.utils.ValidationUtils.getPasswordErrorMessage()
                             isValid = false
                         }
 
@@ -325,11 +342,20 @@ fun PatientResetPasswordScreen(
 
                         if (isValid) {
                             isSaving = true
+                            val request = ResetPasswordRequest(email, newPassword, confirmPassword)
                             scope.launch {
-                                // Simulate API call
-                                delay(1500)
-                                isSaving = false
-                                showSuccessDialog = true
+                                try {
+                                    val response = RetrofitClient.apiService.resetPassword(request)
+                                    isSaving = false
+                                    if (response.isSuccessful && response.body()?.status == "password_reset_success") {
+                                        showSuccessDialog = true
+                                    } else {
+                                        Toast.makeText(context, "Error: ${response.body()?.status ?: response.message()}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    isSaving = false
+                                    Toast.makeText(context, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     },

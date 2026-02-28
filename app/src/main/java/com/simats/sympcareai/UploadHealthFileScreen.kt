@@ -1,5 +1,8 @@
 package com.simats.sympcareai
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,28 +23,75 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.simats.sympcareai.data.response.DiseaseRisk
+import com.simats.sympcareai.data.response.FileAnalysisResponse
+import com.simats.sympcareai.network.RetrofitClient
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
+import java.io.File
+import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UploadHealthFileScreen(
+    patientId: String,
+    symptoms: List<String> = emptyList(),
+    answers: Map<String, String> = emptyMap(),
     onBackClick: () -> Unit,
-    onUploadClick: () -> Unit,
-    onNavigateTo: (Screen) -> Unit
+    onAnalyseClick: (uris: List<Uri>, description: String, category: String) -> Unit,
+    onNavigateTo: (Screen) -> Unit,
+    initialFileUris: List<Uri> = emptyList(),
+    initialDescription: String = "",
+    initialCategory: String = "Prescription"
 ) {
-    var description by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("Prescription") }
-    var selectedFileUris by remember { mutableStateOf<List<android.net.Uri>>(emptyList()) }
+    val context = LocalContext.current
+    var description by remember { mutableStateOf(initialDescription) }
+    var selectedCategory by remember { mutableStateOf(initialCategory) }
+    var selectedFileUris by remember { mutableStateOf<List<Uri>>(initialFileUris) }
+    var isAttaching by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()
-    ) { uris: List<android.net.Uri> ->
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
         selectedFileUris = selectedFileUris + uris
+    }
+
+    // Helper to get real filename from Uri
+    fun getFileName(uri: Uri): String {
+        var name = ""
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && nameIndex != -1) {
+                name = cursor.getString(nameIndex)
+            }
+        }
+        return name.ifEmpty { uri.path?.substringAfterLast("/") ?: "Selected File" }
+    }
+
+    // getFileFromUri function remains same (used for debug/logic if needed, but here we just collect URIs)
+    fun handleAttach() {
+        if (selectedFileUris.isEmpty()) {
+            errorMessage = "Please select at least one file."
+            return
+        }
+        
+        isAttaching = true
+        // Short delay to simulate "processing" or "attaching" for UX
+        onAnalyseClick(selectedFileUris, description, selectedCategory)
     }
 
     Scaffold(
@@ -94,13 +144,13 @@ fun UploadHealthFileScreen(
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        "Upload Health File",
+                        "Analyze Medical Documentation",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Text(
-                        "Add your medical reports or prescriptions",
+                        "Get immediate AI insights from your reports",
                         fontSize = 14.sp,
                         color = Color.White.copy(alpha = 0.9f)
                     )
@@ -128,7 +178,7 @@ fun UploadHealthFileScreen(
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00C9B9)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 280.dp)
+                            .heightIn(min = 250.dp)
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -145,7 +195,7 @@ fun UploadHealthFileScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("Tap to upload file", fontWeight = FontWeight.Bold, color = Color(0xFF00695C))
+                            Text("Tap to select files", fontWeight = FontWeight.Bold, color = Color(0xFF00695C))
                             Text("Supported formats: PDF, JPG, PNG", fontSize = 12.sp, color = Color(0xFF00695C))
                             Spacer(modifier = Modifier.height(16.dp))
                             // File List
@@ -162,7 +212,7 @@ fun UploadHealthFileScreen(
                                         Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF009688))
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = uri.path?.substringAfterLast("/") ?: "Selected File",
+                                            text = getFileName(uri),
                                             fontSize = 14.sp,
                                             color = Color.Black,
                                             maxLines = 1,
@@ -186,6 +236,11 @@ fun UploadHealthFileScreen(
                                 Text(if (selectedFileUris.isEmpty()) "Choose Files" else "Add More Files", color = Color(0xFF00C9B9), fontWeight = FontWeight.Bold)
                             }
                         }
+                    }
+
+                    errorMessage?.let {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(it, color = Color.Red, fontSize = 12.sp, textAlign = TextAlign.Center)
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -250,7 +305,7 @@ fun UploadHealthFileScreen(
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it },
-                        placeholder = { Text("Describe the file (e.g., Doctor prescription...)") },
+                        placeholder = { Text("Describe the file (e.g., Blood test results...)") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(120.dp),
@@ -269,7 +324,7 @@ fun UploadHealthFileScreen(
 
                     // Buttons
                     Button(
-                        onClick = onUploadClick,
+                        onClick = { handleAttach() },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C9B9)),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -278,7 +333,7 @@ fun UploadHealthFileScreen(
                     ) {
                         Icon(Icons.Default.CloudUpload, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Upload & Analyze")
+                        Text("Analyse")
                     }
                     
                     Spacer(modifier = Modifier.height(12.dp))
@@ -311,7 +366,7 @@ fun UploadHealthFileScreen(
                             Icon(Icons.Default.Lock, contentDescription = "Secure", tint = Color(0xFF1976D2))
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                "Secure Upload: Your files are encrypted and stored securely.",
+                                "Instant Analysis: Your files will be securely processed and analyzed immediately.",
                                 fontSize = 12.sp,
                                 color = Color(0xFF1565C0),
                                 lineHeight = 16.sp

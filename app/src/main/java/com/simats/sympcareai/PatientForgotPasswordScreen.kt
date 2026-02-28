@@ -25,11 +25,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.simats.sympcareai.network.RetrofitClient
+import com.simats.sympcareai.data.request.ForgotPasswordSendOtpRequest
+import com.simats.sympcareai.data.response.GenericStatusResponse
+import retrofit2.Response
+import android.widget.Toast
 
 @Composable
 fun PatientForgotPasswordScreen(
     onCancelClick: () -> Unit,
-    onSendOtpClick: () -> Unit
+    onSendOtpClick: (String) -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var emailError by remember { mutableStateOf<String?>(null) }
@@ -164,14 +169,24 @@ fun PatientForgotPasswordScreen(
                         // Basic Validation
                         if (email.isBlank()) {
                             emailError = "Email is required"
-                        } else if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                            emailError = "Invalid email address"
+                        } else if (!com.simats.sympcareai.utils.ValidationUtils.isValidGmail(email)) {
+                            emailError = com.simats.sympcareai.utils.ValidationUtils.getEmailErrorMessage()
                         } else {
                             isLoading = true
+                            val request = ForgotPasswordSendOtpRequest(email)
                             scope.launch {
-                                delay(1500) // Simulate API call
-                                isLoading = false
-                                onSendOtpClick()
+                                try {
+                                    val response = RetrofitClient.apiService.forgotPasswordSendOtp(request)
+                                    isLoading = false
+                                    if (response.isSuccessful && response.body()?.status == "otp_sent") {
+                                        onSendOtpClick(email)
+                                    } else {
+                                        Toast.makeText(context, "Error: ${response.body()?.status ?: response.message()}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    isLoading = false
+                                    Toast.makeText(context, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                     },

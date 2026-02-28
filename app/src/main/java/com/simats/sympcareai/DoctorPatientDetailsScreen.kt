@@ -11,12 +11,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Lightbulb
+import com.simats.sympcareai.data.response.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -24,14 +23,78 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.simats.sympcareai.data.response.*
+import com.simats.sympcareai.network.RetrofitClient
+import com.simats.sympcareai.utils.DateTimeUtils
+import androidx.compose.runtime.*
 
 @Composable
 fun DoctorPatientDetailsScreen(
-    onBackClick: () -> Unit
+    patientId: String,
+    onBackClick: () -> Unit,
+    onNavigateTo: (Screen) -> Unit,
+    onDataLoaded: (name: String) -> Unit
 ) {
+    var patientOverview by remember { mutableStateOf<PatientOverviewResponse?>(null) }
+    var medicalReports by remember { mutableStateOf<List<MedicalReportResponse>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(patientId) {
+        isLoading = true
+        errorMessage = null
+        try {
+            // Fetch Patient Overview
+            val overviewResponse = RetrofitClient.apiService.getPatientOverview(mapOf("patient_id" to patientId))
+            if (overviewResponse.isSuccessful) {
+                patientOverview = overviewResponse.body()
+            }
+            // Fetch All Reports
+            val reportsResponse = RetrofitClient.apiService.listReports(patientId)
+            var loadedReports: List<MedicalReportResponse> = emptyList()
+            if (reportsResponse.isSuccessful) {
+                loadedReports = reportsResponse.body() ?: emptyList()
+                medicalReports = loadedReports
+            }
+            
+            // Notify parent of loaded data
+            val name = patientOverview?.patientName ?: "Patient $patientId"
+//            val latestSymptom = loadedReports
+//                .filter { it.type == "Symptom Assessment" || it.sessionId != null }
+//                .maxByOrNull { it.uploadedAt }
+//                ?.symptoms?.joinToString(", ") ?: "Unknown"
+//
+//            onDataLoaded(name, latestSymptom)
+            
+            isLoading = false
+        } catch (e: Exception) {
+            isLoading = false
+            errorMessage = e.message ?: "Failed to load data"
+        }
+    }
+
+    val fileReports = medicalReports.filter { it.type == "File Analysis" || it.fileUrl != null }
+    val symptomReports = medicalReports.filter { it.type == "Symptom Assessment" || it.sessionId != null }
+    val latestSymptomReport = symptomReports.maxByOrNull { it.uploadedAt }
+
     Scaffold(
         containerColor = Color(0xFFF5F5F5)
     ) { paddingValues ->
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color(0xFF6A5ACD))
+            }
+        } else if (errorMessage != null) {
+            Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(text = "Error: $errorMessage", color = Color.Red, textAlign = TextAlign.Center)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { onBackClick() }) {
+                         Text("Go Back")
+                    }
+                }
+            }
+        } else {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -68,13 +131,13 @@ fun DoctorPatientDetailsScreen(
                         
                         Column(modifier = Modifier.padding(start = 8.dp)) {
                             Text(
-                                text = "John Doe",
+                                text = patientOverview?.patientName ?: "Loading...",
                                 color = Color.White,
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "ID: PAT-10234",
+                                text = "ID: $patientId",
                                 color = Color.White.copy(alpha = 0.8f),
                                 fontSize = 12.sp
                             )
@@ -128,13 +191,13 @@ fun DoctorPatientDetailsScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "John Doe",
+                            text = patientOverview?.patientName ?: "Loading...",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = Color.Black
                         )
                         Text(
-                            text = "Last visit: Jan 25, 2026",
+                            text = if (latestSymptomReport != null) "Last visit: ${DateTimeUtils.formatToKolkataTime(latestSymptomReport.uploadedAt, "MMM dd, yyyy")}" else "No recent visits",
                             color = Color.Gray,
                             fontSize = 12.sp
                         )
@@ -145,24 +208,12 @@ fun DoctorPatientDetailsScreen(
                             Modifier.fillMaxWidth(), 
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            PatientInfoTile(label = "Age", value = "29")
-                            PatientInfoTile(label = "Gender", value = "Male")
-                            PatientInfoTile(label = "Blood", value = "O+")
+                            PatientInfoTile(label = "Age", value = patientOverview?.profile?.age?.toString() ?: "--")
+                            PatientInfoTile(label = "Gender", value = patientOverview?.profile?.gender ?: "--")
+                            PatientInfoTile(label = "Blood", value = patientOverview?.profile?.bloodGroup ?: "--")
                         }
                         
                         Spacer(modifier = Modifier.height(20.dp))
-                        Divider(color = Color.LightGray.copy(alpha = 0.2f))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                             Text(text = "Primary Symptoms", fontSize = 12.sp, color = Color.Gray)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SymptomTag(text = "Headache", color = Color(0xFFFFCDD2), textColor = Color(0xFFD32F2F))
-                            SymptomTag(text = "Fatigue", color = Color(0xFFFFCCBC), textColor = Color(0xFFD84315))
-                            SymptomTag(text = "Dizziness", color = Color(0xFFFFE0B2), textColor = Color(0xFFE65100))
-                        }
                     }
                 }
                 
@@ -216,12 +267,14 @@ fun DoctorPatientDetailsScreen(
                              Row(verticalAlignment = Alignment.CenterVertically) {
                                  Icon(Icons.Outlined.Description, contentDescription = null, tint = Color(0xFF448AFF), modifier = Modifier.size(16.dp))
                                  Spacer(modifier = Modifier.width(4.dp))
-                                 Text("3 files uploaded", color = Color(0xFF448AFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                 Text("${fileReports.size} files uploaded", color = Color(0xFF448AFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                              }
                              
                              Row(
                                  verticalAlignment = Alignment.CenterVertically, 
-                                 modifier = Modifier.clickable { /* TODO: View Reports */ }
+                                 modifier = Modifier.clickable { 
+                                     onNavigateTo(Screen.HealthReports(patientId = patientId, initialTab = 0, themeColor = Color(0xFF6A5ACD)))
+                                 }
                              ) {
                                  Text("View Report", color = Color(0xFF448AFF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                  Spacer(modifier = Modifier.width(4.dp))
@@ -231,182 +284,14 @@ fun DoctorPatientDetailsScreen(
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // AI Analysis Report Card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    shape = RoundedCornerShape(20.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(
-                            elevation = 10.dp,
-                            shape = RoundedCornerShape(20.dp),
-                            ambientColor = Color(0x407B61FF),
-                            spotColor = Color(0x407B61FF)
-                        )
-                ) {
-                    Column(modifier = Modifier.padding(24.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                color = Color(0xFF7B61FF), // Vibrant Purple
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.size(56.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        Icons.Outlined.Lightbulb,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(28.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = "AI Analysis Report",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                    color = Color(0xFF1E1E2E)
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "AI-generated report based on the patient's chat and symptoms",
-                                    color = Color.Gray,
-                                    fontSize = 13.sp,
-                                    lineHeight = 18.sp
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(24.dp))
-                        HorizontalDivider(color = Color(0xFFF0F0F5))
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .background(Color(0xFF7B61FF), CircleShape)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "Latest analysis: Jan 27,",
-                                        color = Color(0xFF7B61FF),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = "2026",
-                                        color = Color(0xFF7B61FF),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clickable { /* TODO: View AI Report */ }
-                                    .background(Color.Transparent)
-                            ) {
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        "View AI",
-                                        color = Color(0xFF7B61FF),
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        "Report",
-                                        color = Color(0xFF7B61FF),
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = null,
-                                    tint = Color(0xFF7B61FF),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                // Patient Priority Detail Card (Reuse if needed, or simple view as shown in previous screen? 
-                // The screenshot shows Priority Level again here at bottom)
-                Card(
-                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                      Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "PATIENT PRIORITY LEVEL",
-                            color = Color.Gray,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(20.dp))
-                        
-                        // Circular Gauge Reuse
-                        Box(contentAlignment = Alignment.Center) {
-                            CircularPriorityGauge(value = 0.6f, color = Color(0xFFD32F2F)) // 60%
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("LEVEL", fontSize = 10.sp, color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
-                                Text("3", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F))
-                            }
-                        }
-                        
-                         Spacer(modifier = Modifier.height(20.dp))
-                        
-                        Surface(
-                            color = Color(0xFFFFEBEE),
-                            shape = RoundedCornerShape(20.dp)
-                        ) {
-                             Text(
-                                 text = "Moderate Priority",
-                                 color = Color(0xFFD32F2F),
-                                 fontSize = 12.sp,
-                                 fontWeight = FontWeight.Bold,
-                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                             )
-                        }
-                        
-                         Spacer(modifier = Modifier.height(12.dp))
-                        
-                         Text(
-                             text = "Moderate Priority – Needs consultation within 24 hours",
-                             color = Color.Gray,
-                             fontSize = 11.sp,
-                             textAlign = TextAlign.Center
-                         )
-                    }
-                }
                 
                 Spacer(modifier = Modifier.height(30.dp))
             }
         }
+        }
     }
 }
+
 
 @Composable
 fun PatientInfoTile(label: String, value: String) {
@@ -427,18 +312,3 @@ fun PatientInfoTile(label: String, value: String) {
     }
 }
 
-@Composable
-fun SymptomTag(text: String, color: Color, textColor: Color) {
-    Surface(
-        color = color,
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Text(
-            text = text,
-            color = textColor,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-        )
-    }
-}

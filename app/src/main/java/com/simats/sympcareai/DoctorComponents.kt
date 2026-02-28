@@ -14,28 +14,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CheckCircle
 
 @Composable
 fun ActivePatientCard(
     name: String,
-    symptom: String,
     time: String,
     status: String,
     statusColor: Color,
     statusTextColor: Color,
     initial: String,
     initialBg: Color,
-    onMarkComplete: (() -> Unit)? = null // Optional callback
+    showCheckbox: Boolean = true, // Added to toggle checkbox visibility
+    onMarkComplete: (() -> Unit)? = null, // Optional callback
+    onClick: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Box {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true }, // Toggle dropdown on click
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick?.invoke() }, 
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -46,6 +44,20 @@ fun ActivePatientCard(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (showCheckbox) {
+                Checkbox(
+                    checked = status == "Completed",
+                    onCheckedChange = { checked ->
+                        if (checked && status != "Completed") {
+                            onMarkComplete?.invoke()
+                        }
+                    },
+                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00BFA5))
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
             Surface(
                 shape = CircleShape,
                 color = initialBg,
@@ -59,7 +71,6 @@ fun ActivePatientCard(
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = name, fontWeight = FontWeight.Bold, color = Color.Black)
-                Text(text = symptom, color = Color.Gray, fontSize = 12.sp)
             }
             
             Column(horizontalAlignment = Alignment.End) {
@@ -80,29 +91,6 @@ fun ActivePatientCard(
             }
         }
     }
-
-    // Context Menu
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = { expanded = false },
-        containerColor = Color.White
-    ) {
-        DropdownMenuItem(
-            text = { Text("Mark as Complete") },
-            onClick = {
-                onMarkComplete?.invoke()
-                expanded = false
-            },
-            leadingIcon = {
-                 Icon(
-                    imageVector = Icons.Outlined.CheckCircle, 
-                    contentDescription = null,
-                    tint = Color(0xFF00BFA5)
-                ) 
-            }
-        )
-    }
-  }
 }
 
 @Composable

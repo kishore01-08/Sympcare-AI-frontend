@@ -10,7 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -22,11 +22,29 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun HealthAnalysisResultScreen(
+    score: Int = 68,
     onCloseClick: () -> Unit,
     onStartNewSessionClick: () -> Unit
 ) {
+    val improvement = score - 60 // Simple mock logic: improved if > 60
+    val status = when {
+        score >= 80 -> "Improved"
+        score >= 60 -> "Neutral"
+        else -> "Needs Attention"
+    }
+    val statusColor = when {
+        score >= 80 -> Color(0xFFE0F2F1)
+        score >= 60 -> Color(0xFFFFF3E0)
+        else -> Color(0xFFFFEBEE)
+    }
+    val statusTextColor = when {
+        score >= 80 -> Color(0xFF009688)
+        score >= 60 -> Color(0xFFFF9800)
+        else -> Color(0xFFF44336)
+    }
+
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = Color(0xFFFAF9F6)
     ) { paddingValues ->
 
         Column(
@@ -42,7 +60,7 @@ fun HealthAnalysisResultScreen(
                     .fillMaxWidth()
                     .background(
                         brush = Brush.verticalGradient(
-                            colors = listOf(Color(0xFF2196F3), Color.Black)
+                            colors = listOf(Color(0xFF2196F3), Color(0xFF009688))
                         )
                     )
                     .padding(24.dp)
@@ -106,7 +124,8 @@ fun HealthAnalysisResultScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                    .offset(y = (-30).dp)
+                    .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
 
@@ -114,7 +133,7 @@ fun HealthAnalysisResultScreen(
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     shape = RoundedCornerShape(24.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -140,7 +159,7 @@ fun HealthAnalysisResultScreen(
                             )
 
                             CircularProgressIndicator(
-                                progress = { 0.68f },
+                                progress = { score / 100f },
                                 modifier = Modifier.size(150.dp),
                                 color = Color(0xFF2196F3),
                                 strokeWidth = 12.dp,
@@ -148,28 +167,33 @@ fun HealthAnalysisResultScreen(
                             )
 
                             Text(
-                                "68%",
+                                "$score%",
                                 fontSize = 40.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF009688)
+                                color = statusTextColor
                             )
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
 
                         Surface(
-                            color = Color(0xFFFFF3E0),
+                            color = statusColor,
                             shape = RoundedCornerShape(20.dp)
                         ) {
                             Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                                Text("📊 Neutral", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold)
+                                val emoji = when(status) {
+                                    "Improved" -> "📈"
+                                    "Neutral" -> "📊"
+                                    else -> "⚠️"
+                                }
+                                Text("$emoji $status", color = statusTextColor, fontWeight = FontWeight.Bold)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
-                            "Compared to your last session",
+                            text = if (improvement >= 0) "+$improvement% compared to last session" else "$improvement% compared to last session",
                             color = Color.Gray,
                             fontSize = 12.sp
                         )
@@ -199,7 +223,11 @@ fun HealthAnalysisResultScreen(
                             Text("AI Health Summary", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "You're maintaining steady health. Some areas show improvement while others need attention.",
+                                text = when {
+                                    score >= 80 -> "Excellent progress! Your health indicators are strong. Keep up the good work and maintain your current routine."
+                                    score >= 60 -> "You're maintaining steady health. Some areas show improvement while others need attention. Focus on consistent hydration and sleep."
+                                    else -> "Your wellness score is lower than usual. We recommend focusing on restorative sleep and light physical activity this week."
+                                },
                                 fontSize = 14.sp,
                                 color = Color.DarkGray,
                                 lineHeight = 20.sp
@@ -214,6 +242,7 @@ fun HealthAnalysisResultScreen(
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     shape = RoundedCornerShape(24.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(24.dp)) {
@@ -234,14 +263,12 @@ fun HealthAnalysisResultScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
-                    onClick = {},
+                    onClick = onCloseClick,
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF26A69A)),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) {
-                    Icon(Icons.Default.Lightbulb, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("View Detailed Report")
+                    Text("Complete", color = Color.White, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -260,6 +287,7 @@ fun HealthAnalysisResultScreen(
         }
     }
 }
+
 
 @Composable
 fun RecommendationItem(number: String, text: String) {

@@ -35,17 +35,11 @@ fun DataPrivacyScreen(
     // Real Permission States
     var cameraPermission by remember { mutableStateOf(false) }
     var micPermission by remember { mutableStateOf(false) }
-    var notificationPermission by remember { mutableStateOf(false) }
 
     // Function to check permissions
     fun checkPermissions() {
         cameraPermission = ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
         micPermission = ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            notificationPermission = ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        } else {
-            notificationPermission = true // implicitly granted on older versions
-        }
     }
 
     // Check on Resume (returning from Settings)
@@ -130,15 +124,6 @@ fun DataPrivacyScreen(
                         title = "Microphone",
                         description = if (micPermission) "Allowed" else "Denied",
                         checked = micPermission,
-                        onCheckedChange = { openSettings() },
-                         enabled = true
-                    )
-                    Divider(color = Color.LightGray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 12.dp))
-                    PrivacyToggleItem(
-                        icon = Icons.Default.Notifications,
-                        title = "Notifications",
-                        description = if (notificationPermission) "Allowed" else "Denied",
-                        checked = notificationPermission,
                         onCheckedChange = { openSettings() },
                          enabled = true
                     )

@@ -24,11 +24,7 @@ fun PermissionRequestLogic() {
     val permissionsToRequest = mutableListOf(
         Manifest.permission.CAMERA,
         Manifest.permission.RECORD_AUDIO
-    ).apply {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }.toTypedArray()
+    ).toTypedArray()
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -59,7 +55,7 @@ fun PermissionRequestLogic() {
         AlertDialog(
             onDismissRequest = { showPermissionRationale = false },
             title = { Text("Permissions Required") },
-            text = { Text("SympCareAI needs Camera, Microphone, and Notification permissions to function correctly (Video Consulations, Voice Assistant, Alerts). Please enable them in Settings.") },
+            text = { Text("SympCareAI needs Camera and Microphone permissions to function correctly (Video Consulations, Voice Assistant). Please enable them in Settings.") },
             confirmButton = {
                 TextButton(onClick = {
                     showPermissionRationale = false

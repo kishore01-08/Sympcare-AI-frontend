@@ -31,9 +31,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.simats.sympcareai.network.RetrofitClient
+import com.simats.sympcareai.data.request.ChangePasswordRequest
+import com.simats.sympcareai.data.response.GenericStatusResponse
+import retrofit2.Response
 
 @Composable
 fun ResetPasswordScreen(
+    userId: String,
     onBackClick: () -> Unit,
     onSuccess: () -> Unit,
     isDoctor: Boolean
@@ -55,11 +60,9 @@ fun ResetPasswordScreen(
     
     // Validation
     val passwordsMatch = newPassword.isNotEmpty() && newPassword == confirmPassword
-    val hasMinLength = newPassword.length >= 8
-    val hasLettersAndNumbers = newPassword.any { it.isLetter() } && newPassword.any { it.isDigit() }
-    val hasMixedCase = newPassword.any { it.isLowerCase() } && newPassword.any { it.isUpperCase() }
+    val isPasswordComplex = com.simats.sympcareai.utils.ValidationUtils.isValidPassword(newPassword)
     
-    val isPasswordValid = hasMinLength && hasLettersAndNumbers && hasMixedCase && passwordsMatch && currentPassword.isNotEmpty()
+    val isPasswordValid = isPasswordComplex && passwordsMatch && currentPassword.isNotEmpty()
 
     Box(
         modifier = Modifier
@@ -224,10 +227,10 @@ fun ResetPasswordScreen(
                                 fontSize = 14.sp
                             )
                         }
-                        
-                        RequirementItem(text = "At least 8 characters long", isMet = hasMinLength)
-                        RequirementItem(text = "Include both letters and numbers", isMet = hasLettersAndNumbers)
-                        RequirementItem(text = "Use a mix of uppercase and lowercase", isMet = hasMixedCase)
+                        com.simats.sympcareai.ui.RequirementItem(text = "At least 8 characters long", isMet = newPassword.length >= 8)
+                        com.simats.sympcareai.ui.RequirementItem(text = "Include at least one number", isMet = newPassword.any { it.isDigit() })
+                        com.simats.sympcareai.ui.RequirementItem(text = "One uppercase letter", isMet = newPassword.any { it.isUpperCase() })
+                        com.simats.sympcareai.ui.RequirementItem(text = "One special character", isMet = newPassword.any { it.isLetterOrDigit().not() && !it.isWhitespace() })
                     }
                 }
                 
@@ -237,11 +240,38 @@ fun ResetPasswordScreen(
                 Button(
                     onClick = {
                         isLoading = true
+                        val request = ChangePasswordRequest(
+                            currentPassword = currentPassword,
+                            newPassword = newPassword,
+                            confirmPassword = confirmPassword,
+                            patientId = if (!isDoctor) userId else null,
+                            docId = if (isDoctor) userId else null
+                        )
+                        
                         scope.launch {
-                            delay(1500) // Simulate generic API call
-                            isLoading = false
-                            Toast.makeText(context, "Password updated successfully", Toast.LENGTH_SHORT).show()
-                            onSuccess()
+                            try {
+                                val response = if (isDoctor) {
+                                    RetrofitClient.apiService.doctorChangePassword(request)
+                                } else {
+                                    RetrofitClient.apiService.changePassword(request)
+                                }
+
+                                isLoading = false
+                                if (response.isSuccessful) {
+                                    val body = response.body()
+                                    if (body?.status == "password_changed_success" || body?.status == "password_updated_successfully") {
+                                        Toast.makeText(context, "Password updated successfully", Toast.LENGTH_SHORT).show()
+                                        onSuccess()
+                                    } else {
+                                        Toast.makeText(context, body?.status ?: "Error: ${response.message()}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "Server Error: ${response.code()}", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                isLoading = false
+                                Toast.makeText(context, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     },
                     modifier = Modifier
@@ -340,25 +370,6 @@ fun PasswordInput(
                 unfocusedContainerColor = Color.White,
                 focusedContainerColor = Color.White
             )
-        )
-    }
-}
-
-@Composable
-fun RequirementItem(text: String, isMet: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            if (isMet) Icons.Outlined.CheckCircle else Icons.Outlined.CheckCircle, // Use same icon but different color/style. Or maybe Check vs Circle
-            // Design shows check circle for requirements. Let's use CheckCircle for both but color changes
-             contentDescription = null,
-            tint = if (isMet) Color(0xFF2962FF) else Color.Gray.copy(alpha = 0.5f),
-            modifier = Modifier.size(16.dp)
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = text,
-            fontSize = 12.sp,
-            color = if (isMet) Color(0xFF1565C0) else Color.Gray
         )
     }
 }

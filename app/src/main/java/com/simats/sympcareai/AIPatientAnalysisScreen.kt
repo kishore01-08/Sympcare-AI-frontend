@@ -1,5 +1,7 @@
 package com.simats.sympcareai
 
+import com.simats.sympcareai.ai_engine.AIEngine
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -8,11 +10,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,10 +31,36 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AIPatientAnalysisScreen(
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    patientId: String = "",
+    symptoms: List<String> = emptyList()
 ) {
+    var aiResult by remember { mutableStateOf<com.simats.sympcareai.data.response.AIAnalysisResponse?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        val requestBody = mutableMapOf<String, Any>(
+            "patient_id" to patientId,
+            "symptoms" to symptoms
+        )
+        
+        try {
+            val response = com.simats.sympcareai.network.RetrofitClient.apiService.analyzeAI(requestBody)
+            isLoading = false
+            if (response.isSuccessful) {
+                aiResult = response.body()
+            } else {
+                errorMessage = "Analysis failed: ${response.code()}"
+            }
+        } catch (e: Exception) {
+            isLoading = false
+            errorMessage = "Network error: ${e.message}"
+        }
+    }
     Scaffold(
         containerColor = Color(0xFFF5F5F5)
     ) { paddingValues ->
@@ -93,8 +122,58 @@ fun AIPatientAnalysisScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
+                // Analysis Based On
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                         Row(verticalAlignment = Alignment.CenterVertically) {
+                             Surface(
+                                 color = Color(0xFFE0F2F1),
+                                 shape = RoundedCornerShape(8.dp),
+                                 modifier = Modifier.size(30.dp)
+                             ) {
+                                 Box(contentAlignment = Alignment.Center) {
+                                     Icon(Icons.Default.ChatBubble, contentDescription = null, tint = Color(0xFF009688), modifier = Modifier.size(18.dp))
+                                 }
+                             }
+                             Spacer(modifier = Modifier.width(12.dp))
+                             Text(
+                                 text = "Analyzed Symptoms",
+                                 fontWeight = FontWeight.Bold,
+                                 fontSize = 16.sp,
+                                 color = Color.Black
+                             )
+                         }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        if (symptoms.isNotEmpty()) {
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                symptoms.forEach { symptom ->
+                                    SuggestionChip(
+                                        onClick = {}, 
+                                        label = { Text(symptom) }, 
+                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFFE0F2F1))
+                                    )
+                                }
+                            }
+                        } else {
+                             Text("No symptoms provided", fontSize = 12.sp, color = Color.Gray)
+                        }
+                    }
+                }
+
                 // Possible Conditions Card
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -122,13 +201,27 @@ fun AIPatientAnalysisScreen(
                              )
                          }
                         
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        ConditionItem(name = "Migraine", severity = "Moderate", color = Color(0xFFFFCDD2), textColor = Color(0xFFD32F2F))
-                        Divider(modifier = Modifier.padding(vertical = 8.dp), color = Color.Transparent)
-                        ConditionItem(name = "Dehydration", severity = "Mild", color = Color(0xFFFFE0B2), textColor = Color(0xFFF57C00))
-                         Divider(modifier = Modifier.padding(vertical = 8.dp), color = Color.Transparent)
-                        ConditionItem(name = "Stress-related Fatigue", severity = "Mild", color = Color(0xFFFFE0B2), textColor = Color(0xFFF57C00))
+                    if (isLoading) {
+                        Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color(0xFFFF6E6E))
+                        }
+                    } else if (errorMessage != null) {
+                        Text(text = errorMessage!!, color = Color.Red, fontSize = 12.sp)
+                    } else {
+                        aiResult?.possibleDiseases?.forEach { disease ->
+                            val prob = disease.probability ?: 0f
+                            AnalysisConditionItem(
+                                name = disease.name,
+                                severity = if (prob > 0.5f) "Highly Likely" else "Possible",
+                                color = if (prob > 0.5f) Color(0xFFFFCDD2) else Color(0xFFFFE0B2),
+                                textColor = if (prob > 0.5f) Color(0xFFD32F2F) else Color(0xFFF57C00),
+                                probability = AIEngine.formatProbability(prob)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        } ?: run {
+                            Text("No specific conditions identified", fontSize = 14.sp)
+                        }
+                    }
                     }
                 }
 
@@ -154,23 +247,34 @@ fun AIPatientAnalysisScreen(
                         Spacer(modifier = Modifier.height(20.dp))
                         
                         // Circular Gauge
+                        val triage = aiResult?.triage ?: 3
+                        val triageColor = AIEngine.getTriageColor(triage)
+                        val triageLabel = AIEngine.getTriageDescription(triage)
+                        
+                        val progress = when(triage) {
+                            1 -> 0.9f
+                            2 -> 0.6f
+                            3 -> 0.3f
+                            else -> 0f
+                        }
+
                         Box(contentAlignment = Alignment.Center) {
-                            CircularPriorityGauge(value = 0.6f, color = Color(0xFFD32F2F)) // 60%
+                            CircularPriorityGauge(value = progress, color = triageColor)
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("LEVEL", fontSize = 10.sp, color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold)
-                                Text("3", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F))
+                                Text("LEVEL", fontSize = 10.sp, color = triageColor, fontWeight = FontWeight.Bold)
+                                Text("${aiResult?.triage ?: '-'}", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = triageColor)
                             }
                         }
                         
                         Spacer(modifier = Modifier.height(20.dp))
                         
                         Surface(
-                            color = Color(0xFFFFEBEE),
+                            color = triageColor.copy(alpha = 0.1f),
                             shape = RoundedCornerShape(20.dp)
                         ) {
                              Text(
-                                 text = "Moderate Priority",
-                                 color = Color(0xFFD32F2F),
+                                 text = "$triageLabel Priority",
+                                 color = triageColor,
                                  fontSize = 12.sp,
                                  fontWeight = FontWeight.Bold,
                                  modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -180,7 +284,7 @@ fun AIPatientAnalysisScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         
                          Text(
-                             text = "Moderate Priority – Needs consultation within 24 hours",
+                             text = triageLabel,
                              color = Color.Gray,
                              fontSize = 11.sp,
                              textAlign = TextAlign.Center
@@ -232,7 +336,7 @@ fun AIPatientAnalysisScreen(
 }
 
 @Composable
-fun ConditionItem(name: String, severity: String, color: Color, textColor: Color) {
+fun AnalysisConditionItem(name: String, severity: String, color: Color, textColor: Color, probability: String) {
     Surface(
         color = color.copy(alpha = 0.3f), // Light background
         shape = RoundedCornerShape(12.dp),
@@ -244,9 +348,12 @@ fun ConditionItem(name: String, severity: String, color: Color, textColor: Color
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(6.dp).background(Color(0xFFE57373), CircleShape))
+                Box(modifier = Modifier.size(6.dp).background(textColor.copy(alpha = 0.8f), CircleShape))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = name, fontWeight = FontWeight.Bold, color = Color.Black)
+                Column {
+                    Text(text = name, fontWeight = FontWeight.Bold, color = Color.Black, fontSize = 14.sp)
+                    Text(text = "Confidence: $probability", color = Color.Gray, fontSize = 10.sp)
+                }
             }
             Surface(
                 color = Color.White.copy(alpha = 0.5f),

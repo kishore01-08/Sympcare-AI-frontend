@@ -1,16 +1,15 @@
 package com.simats.sympcareai
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,58 +18,95 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.background
+import com.simats.sympcareai.network.RetrofitClient
+import com.simats.sympcareai.data.response.QuestionsResponse
+import com.simats.sympcareai.data.response.AIAnalysisResponse
+import kotlinx.coroutines.launch
+import retrofit2.Response
 
-@OptIn(ExperimentalMaterial3Api::class)
+data class ChatMessage(val text: String, val isUser: Boolean)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-
 fun ChatScreen(
     onBackClick: () -> Unit,
-    onAttachmentClick: () -> Unit,
     onNavigateTo: (Screen) -> Unit,
-    onFinishClick: () -> Unit,
+    onFinishClick: (AIAnalysisResponse) -> Unit,
     isReadOnly: Boolean = false,
-    selectedSymptoms: List<String> = emptyList()
+    selectedSymptoms: List<String> = emptyList(),
+    patientId: String = "",
+    sessionId: Int = -1
 ) {
     var message by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(false) }
+    var showAllSymptomsPopup by remember { mutableStateOf(false) }
     
     // Conversation State
-    val messages = remember { mutableStateListOf<ChatMessage>() }
+    val messages = remember<androidx.compose.runtime.snapshots.SnapshotStateList<ChatMessage>> { mutableStateListOf() }
     val listState = rememberLazyListState()
     
-    // Questionnaire Logic (Mirrors Voice Assistant for consistency)
-    val questions = remember {
-        listOf(
-            "How long have you been experiencing these symptoms?",
-            "On a scale of 1 to 10, how severe is the pain?",
-            "Do you have any known allergies?",
-            "Are you currently taking any medications?",
-            "Thank you. I have gathered your information. You can now click 'Finish' to proceed to analysis."
-        )
-    }
+    // Backend Questions State
+    var questions by remember { mutableStateOf<List<String>>(emptyList()) }
     var currentQuestionIndex by remember { mutableIntStateOf(0) }
+    var isLoadingQuestions by remember { mutableStateOf(true) }
+    var isAnalyzing by remember { mutableStateOf(false) }
+    var analysisError by remember { mutableStateOf<String?>(null) }
+    
+    // Collected Answers for Analysis
+    val collectedAnswers = remember { mutableStateMapOf<String, String>() }
+    
+    val scope = rememberCoroutineScope()
 
-    // Helper to analyze symptoms (Local version for Chat)
-    fun analyzeSymptoms(symptoms: List<String>): String {
-        return when {
-            symptoms.contains("Fever") && symptoms.contains("Cough") -> "Potential Viral Infection or Flu. Stay hydrated and rest."
-            symptoms.contains("Headache") && symptoms.contains("Nausea") -> "Possible Migraine or Dehydration. Avoid bright lights."
-            symptoms.contains("Chest Pain") -> "Chest pain requires immediate attention. Please consult a doctor."
-            symptoms.contains("Stomach Ache") -> "Could be Indigestion or Gastritis. Watch your diet."
-            symptoms.contains("Skin Rash") -> "Possible Allergic Reaction. Avoid allergens."
-            symptoms.isNotEmpty() -> "Symptoms reported: ${symptoms.joinToString(", ")}. Further evaluation recommended."
-            else -> "Need more info for analysis."
+    fun performAnalysis() {
+        isAnalyzing = true
+        analysisError = null
+        
+        val request = mapOf(
+            "patient_id" to patientId,
+            "symptoms" to selectedSymptoms,
+            "answers" to collectedAnswers.toMap()
+        )
+        
+        scope.launch {
+            try {
+                val response = RetrofitClient.apiService.analyzeAI(request)
+                isAnalyzing = false
+                if (response.isSuccessful && response.body() != null) {
+                    onFinishClick(response.body()!!)
+                } else {
+                    analysisError = "Analysis failed: ${response.code()}"
+                }
+            } catch (e: Exception) {
+                isAnalyzing = false
+                analysisError = "Network error: ${e.message}"
+            }
         }
     }
 
-    // Initial Greeting
+    // Fetch questions from backend
     LaunchedEffect(Unit) {
-        if (messages.isEmpty() && !isReadOnly) {
-            val symptomText = if (selectedSymptoms.isNotEmpty()) " for ${selectedSymptoms.joinToString(", ")}" else ""
-            messages.add(ChatMessage("Hello! I'm here to help with your symptoms$symptomText. ${questions[0]}", isUser = false))
+        if (!isReadOnly) {
+            val request = mapOf(
+                "patient_id" to patientId,
+                "symptoms" to selectedSymptoms
+            )
+            isLoadingQuestions = false
+            try {
+                val response = RetrofitClient.apiService.getQuestions(request)
+                if (response.isSuccessful) {
+                    questions = response.body()?.questions ?: emptyList()
+                    if (questions.isNotEmpty()) {
+                        val symptomText = if (selectedSymptoms.isNotEmpty()) " for ${selectedSymptoms.joinToString(", ")}" else ""
+                        messages.add(ChatMessage("Hello! I'm here to help with your symptoms$symptomText. ${questions[0]}", isUser = false))
+                    } else {
+                        messages.add(ChatMessage("Hello! I'm here to help. How can I assist you today?", isUser = false))
+                    }
+                } else {
+                    messages.add(ChatMessage("Hello! I'm having trouble connecting to my knowledge base. Please try describing your symptoms anyway.", isUser = false))
+                }
+            } catch (e: Exception) {
+                messages.add(ChatMessage("Network error. Please check your connection.", isUser = false))
+            }
         }
     }
 
@@ -85,29 +121,39 @@ fun ChatScreen(
         if (message.isNotBlank()) {
             val userMsg = message
             messages.add(ChatMessage(userMsg, isUser = true))
+            
+            // Map common questions to backend keys for analysis if needed
+            if (currentQuestionIndex < questions.size) {
+                val q = questions[currentQuestionIndex]
+                when {
+                    q.contains("severe", ignoreCase = true) || q.contains("1 to 10", ignoreCase = true) -> collectedAnswers["pain"] = userMsg
+                    q.contains("how many days", ignoreCase = true) || q.contains("how long", ignoreCase = true) -> collectedAnswers["days"] = userMsg
+                    else -> collectedAnswers["q_${currentQuestionIndex}"] = userMsg
+                }
+            }
+
             message = ""
 
             // AI Response Logic
             if (currentQuestionIndex < questions.size - 1) {
                 currentQuestionIndex++
                 val nextQ = questions[currentQuestionIndex]
-                // Simulate delay could go here with coroutine, but for UI responsiveness direct add is fine/snappy
                 messages.add(ChatMessage(nextQ, isUser = false))
             } else {
-                // Analysis
-                val analysis = analyzeSymptoms(selectedSymptoms)
-                messages.add(ChatMessage("Based on your answers and selected symptoms: $analysis", isUser = false))
-                messages.add(ChatMessage("Please click 'Finish' to generate your full report.", isUser = false))
+                messages.add(ChatMessage("Thank you. I have gathered all the information needed for analysis.", isUser = false))
+                messages.add(ChatMessage("Please click 'Analyze' to generate your health report.", isUser = false))
             }
         }
     }
 
     Scaffold(
         bottomBar = {
-            AppBottomNavigationBar(
-                currentScreen = Screen.Chat,
-                onNavigateTo = onNavigateTo
-            )
+            if (!isReadOnly) {
+                AppBottomNavigationBar(
+                    currentScreen = Screen.Chat,
+                    onNavigateTo = onNavigateTo
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
@@ -132,13 +178,18 @@ fun ChatScreen(
             actions = {
                 if (!isReadOnly) {
                     Button(
-                        onClick = onFinishClick,
+                        onClick = { performAnalysis() },
+                        enabled = !isAnalyzing,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3F51B5)),
                         shape = RoundedCornerShape(20.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                         modifier = Modifier.padding(end = 8.dp).height(36.dp)
                     ) {
-                        Text("Finish", fontSize = 12.sp, color = Color.White)
+                        if (isAnalyzing) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("Analyze", fontSize = 12.sp, color = Color.White)
+                        }
                     }
                 }
             }
@@ -148,35 +199,43 @@ fun ChatScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(16.dp),
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Selected Symptoms Display
             if (selectedSymptoms.isNotEmpty()) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Selected Symptoms:",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        selectedSymptoms.forEach { symptom ->
-                            Surface(
-                                color = Color(0xFFE0F2F1),
-                                shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, Color(0xFF009688))
-                            ) {
-                                Text(
-                                    text = symptom,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF009688)
-                                )
+                Surface(
+                    onClick = { showAllSymptomsPopup = true },
+                    color = Color.White,
+                    shape = RoundedCornerShape(12.dp),
+                    shadowElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Selected Symptoms",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF009688),
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            selectedSymptoms.forEach { symptom ->
+                                Surface(
+                                    color = Color(0xFFE0F2F1),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = symptom,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF009688)
+                                    )
+                                }
                             }
                         }
                     }
@@ -187,7 +246,8 @@ fun ChatScreen(
             LazyColumn(
                 state = listState,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = 16.dp)
             ) {
                 items(messages) { msg ->
                     Row(
@@ -197,9 +257,25 @@ fun ChatScreen(
                         ChatBubble(text = msg.text, isUser = msg.isUser)
                     }
                 }
+
+                if (analysisError != null) {
+                    item {
+                        Surface(
+                            color = Color(0xFFFFEBEE),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = analysisError!!,
+                                color = Color.Red,
+                                modifier = Modifier.padding(16.dp),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
             }
         }
-
 
         // Input Area - Only show if not read-only
         if (!isReadOnly) {
@@ -228,26 +304,6 @@ fun ChatScreen(
                             unfocusedBorderColor = Color.Transparent
                         )
                     )
-                    Box {
-                        IconButton(onClick = { expanded = true }) {
-                            Icon(Icons.Default.AttachFile, contentDescription = "Attach", tint = Color.Gray)
-                        }
-                        DropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Upload File") },
-                                onClick = {
-                                    expanded = false
-                                    onAttachmentClick()
-                                },
-                                 leadingIcon = {
-                                    Icon(Icons.Default.CloudUpload, contentDescription = null)
-                                }
-                            )
-                        }
-                    }
                     IconButton(onClick = { sendMessage() }) {
                        Icon(Icons.Default.Send, contentDescription = "Send", tint = Color(0xFF009688))
                     }
@@ -255,25 +311,58 @@ fun ChatScreen(
             }
         }
     }
+
+    // Full List Popup
+    if (showAllSymptomsPopup) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showAllSymptomsPopup = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Color(0xFFF5F5F5)
+            ) {
+                Column {
+                    CenterAlignedTopAppBar(
+                        title = { Text("Selected Symptoms", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                        navigationIcon = {
+                            IconButton(onClick = { showAllSymptomsPopup = false }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                        },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White)
+                    )
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(selectedSymptoms) { symptom ->
+                            Surface(
+                                color = Color.White,
+                                shape = RoundedCornerShape(12.dp),
+                                shadowElevation = 1.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = Color(0xFF009688),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(text = symptom, fontSize = 16.sp, color = Color.Black)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
-}
-
-data class ChatMessage(val text: String, val isUser: Boolean)
-
-@Composable
-fun ChatBubble(text: String, isUser: Boolean) {
-    Surface(
-        color = if (isUser) Color(0xFF009688) else Color.White,
-        shape = if (isUser) RoundedCornerShape(16.dp).copy(bottomEnd = CornerSize(0.dp))
-                else RoundedCornerShape(16.dp).copy(bottomStart = CornerSize(0.dp)),
-        shadowElevation = 2.dp,
-        modifier = Modifier.widthIn(max = 280.dp)
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(16.dp),
-            color = if (isUser) Color.White else Color.Black,
-            fontSize = 14.sp
-        )
     }
 }

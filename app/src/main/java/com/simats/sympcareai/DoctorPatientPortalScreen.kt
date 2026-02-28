@@ -19,7 +19,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -28,7 +27,6 @@ import androidx.compose.ui.unit.sp
 fun DoctorPatientPortalScreen(
     onBackClick: () -> Unit,
     onViewPatientDetails: (String) -> Unit, // Takes Patient ID
-    onCreateNewPatient: () -> Unit
 ) {
     var patientId by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
@@ -198,18 +196,11 @@ fun DoctorPatientPortalScreen(
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Create New Patient Button
+
                 
-                Button(
-                    onClick = onCreateNewPatient,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .shadow(4.dp, RoundedCornerShape(28.dp)),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A5ACD)), // Purple
-                    shape = RoundedCornerShape(28.dp)
-                ) {
-                    Text("Create New Patient ID", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }

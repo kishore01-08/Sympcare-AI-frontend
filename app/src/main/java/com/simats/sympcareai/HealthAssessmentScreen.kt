@@ -25,12 +25,19 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun HealthAssessmentScreen(
     onBackClick: () -> Unit,
-    onNextClick: () -> Unit
+    onComplete: (Int) -> Unit // Passes the final score
 ) {
-    var selectedOption by remember { mutableStateOf("Good") }
+    val questions = remember { 
+        HealthDataStore.fullQuestionList.shuffled().take(6) 
+    }
+    var currentQuestionIndex by remember { mutableStateOf(0) }
+    var selectedOption by remember { mutableStateOf<HealthOption?>(null) }
+    var totalScore by remember { mutableStateOf(0) }
+
+    val currentQuestion = questions.getOrNull(currentQuestionIndex)
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = Color(0xFFFAF9F6)
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -73,7 +80,7 @@ fun HealthAssessmentScreen(
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             Text(
-                                text = "Question 1 of 5",
+                                text = "Question ${currentQuestionIndex + 1} of ${questions.size}",
                                 color = Color.White,
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -84,108 +91,107 @@ fun HealthAssessmentScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     Text(
-                        text = "Health Assessment",
+                        text = "Quick Health Check",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Text(
-                        text = "Evening Health Review",
+                        text = "Regular checkups help track your wellness",
                         fontSize = 14.sp,
                         color = Color.White.copy(alpha = 0.8f)
                     )
                 }
             }
             
-            // Question Card - Overlapping Header
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .offset(y = (-40).dp)
-                    .padding(horizontal = 24.dp)
-            ) {
-                Card(
-                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                     shape = RoundedCornerShape(24.dp),
-                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                     modifier = Modifier.fillMaxWidth()
+            // Question Card
+            if (currentQuestion != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(y = (-40).dp)
+                        .padding(horizontal = 24.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    Card(
+                         colors = CardDefaults.cardColors(containerColor = Color.White),
+                         shape = RoundedCornerShape(24.dp),
+                         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Question Icon
-                         Surface(
-                            color = Color(0xFF2196F3),
-                            shape = CircleShape,
-                            modifier = Modifier.size(50.dp)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("?", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                            // Question Icon
+                             Surface(
+                                color = Color(0xFF2196F3),
+                                shape = CircleShape,
+                                modifier = Modifier.size(50.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("?", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Text(
-                            text = "How would you rate your sleep quality over the past week?",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        
-                        Spacer(modifier = Modifier.height(32.dp))
-                        
-                        // Options
-                        AssessmentOption(
-                            emoji = "😴",
-                            label = "Poor",
-                            selected = selectedOption == "Poor",
-                            onSelect = { selectedOption = "Poor" }
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                         AssessmentOption(
-                            emoji = "😕",
-                            label = "Fair",
-                            selected = selectedOption == "Fair",
-                            onSelect = { selectedOption = "Fair" }
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                         AssessmentOption(
-                            emoji = "😊",
-                            label = "Good",
-                            selected = selectedOption == "Good",
-                            onSelect = { selectedOption = "Good" }
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                         AssessmentOption(
-                            emoji = "😄",
-                            label = "Very Good",
-                            selected = selectedOption == "Very Good",
-                            onSelect = { selectedOption = "Very Good" }
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                         AssessmentOption(
-                            emoji = "🌟",
-                            label = "Excellent",
-                            selected = selectedOption == "Excellent",
-                            onSelect = { selectedOption = "Excellent" }
-                        )
-                        
-                        Spacer(modifier = Modifier.height(32.dp))
-                        
-                        Button(
-                            onClick = onNextClick,
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEEEEEE)), // Light Gray per design screenshot
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                             Text("Next", color = Color.Gray)
-                             Spacer(modifier = Modifier.width(8.dp))
-                             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color.Gray)
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Text(
+                                text = currentQuestion.text,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            
+                            Spacer(modifier = Modifier.height(32.dp))
+                            
+                            // Options
+                            currentQuestion.options.forEach { option ->
+                                AssessmentOption(
+                                    emoji = option.emoji,
+                                    label = option.label,
+                                    selected = selectedOption == option,
+                                    onSelect = { selectedOption = option }
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+                            
+                            Spacer(modifier = Modifier.height(32.dp))
+                            
+                            Button(
+                                onClick = {
+                                    selectedOption?.let {
+                                        totalScore += it.score
+                                        if (currentQuestionIndex < questions.size - 1) {
+                                            currentQuestionIndex++
+                                            selectedOption = null
+                                        } else {
+                                            // Scale score to percentage (max score is 5*5=25)
+                                            val finalPercentage = (totalScore * 100) / (questions.size * 5)
+                                            onComplete(finalPercentage)
+                                        }
+                                    }
+                                },
+                                enabled = selectedOption != null,
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (selectedOption != null) Color(0xFF2196F3) else Color(0xFFEEEEEE)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                 Text(
+                                     text = if (currentQuestionIndex < questions.size - 1) "Next" else "Finish",
+                                     color = if (selectedOption != null) Color.White else Color.Gray
+                                 )
+                                 Spacer(modifier = Modifier.width(8.dp))
+                                 Icon(
+                                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                     contentDescription = null,
+                                     tint = if (selectedOption != null) Color.White else Color.Gray
+                                 )
+                            }
                         }
                     }
                 }
@@ -193,6 +199,7 @@ fun HealthAssessmentScreen(
         }
     }
 }
+
 
 @Composable
 fun AssessmentOption(
