@@ -25,14 +25,40 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simats.sympcareai.utils.DateTimeUtils
+import androidx.compose.runtime.*
+import com.simats.sympcareai.data.response.ChatHistoryDTO
+import com.simats.sympcareai.network.RetrofitClient
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatHistoryScreen(
     onBackClick: () -> Unit,
-    onChatClick: () -> Unit,
-    onNavigateTo: (Screen) -> Unit
+    onChatClick: (com.simats.sympcareai.data.response.ChatHistoryDTO) -> Unit,
+    onNavigateTo: (Screen) -> Unit,
+    patientId: String
 ) {
+    var historyList by remember { mutableStateOf<List<com.simats.sympcareai.data.response.ChatHistoryDTO>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(patientId) {
+        try {
+            val response = com.simats.sympcareai.network.RetrofitClient.apiService.getChatHistory(patientId)
+            if (response.isSuccessful) {
+                historyList = response.body()?.history ?: emptyList()
+            } else {
+                errorMessage = "Failed to load history: ${response.code()}"
+            }
+        } catch (e: Exception) {
+            errorMessage = "Network error: ${e.message}"
+        } finally {
+            isLoading = false
+        }
+    }
+
     Scaffold(
         bottomBar = {
             AppBottomNavigationBar(
@@ -42,7 +68,6 @@ fun ChatHistoryScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
-        // Refactored to single LazyColumn for full screen scrolling
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -80,148 +105,164 @@ fun ChatHistoryScreen(
                                 color = Color.White
                             )
                         }
-
-
                     }
                 }
             }
             
-            // Spacer
-            item {
-                 Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // Chat List Items
-            items(getSampleChatHistory()) { chat ->
-                Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
-                    ChatHistoryCard(chat = chat, onClick = onChatClick)
+            if (isLoading) {
+                item {
+                    Box(modifier = Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFF0072FF))
+                    }
+                }
+            } else if (errorMessage != null) {
+                item {
+                    Box(modifier = Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(text = errorMessage!!, color = Color.Red)
+                    }
+                }
+            } else if (historyList.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(text = "No chat history found", color = Color.Gray)
+                    }
+                }
+            } else {
+                // Chat List Items
+                items(historyList) { chat ->
+                    ChatHistoryCardDTO(chat = chat, onClick = { onChatClick(chat) })
                 }
             }
-
         }
     }
 }
 
-data class ChatHistoryItem(
-    val title: String,
-    val snippet: String,
-    val time: String,
-    val status: String,
-    val statusColor: Color
-)
-
-fun getSampleChatHistory(): List<ChatHistoryItem> {
-    return listOf(
-        ChatHistoryItem(
-            "Headache consultation",
-            "Discussed mild headache symptoms and received self-care advice",
-            "2 days ago",
-            "low",
-            Color(0xFFCCFF90)
-        ),
-        ChatHistoryItem(
-            "Fever and fatigue",
-            "Reviewed fever symptoms, advised to monitor temperature",
-            "4 days ago",
-            "moderate",
-            Color(0xFFFFE082)
-        ),
-        ChatHistoryItem(
-            "General wellness check",
-            "Routine health discussion and preventive care tips",
-            "6 days ago",
-            "low",
-            Color(0xFFCCFF90)
-        )
-    )
-}
-
 @Composable
-fun ChatHistoryCard(chat: ChatHistoryItem, onClick: () -> Unit) {
+fun ChatHistoryCardDTO(chat: com.simats.sympcareai.data.response.ChatHistoryDTO, onClick: () -> Unit) {
+    val triageColor = when(chat.triage) {
+        1 -> Color(0xFFD32F2F) // High
+        2 -> Color(0xFFEF6C00) // Moderate
+        3 -> Color(0xFF388E3C) // Low
+        else -> Color.Gray
+    }
+    val triageBg = triageColor.copy(alpha = 0.1f)
+    val triageLabel = when(chat.triage) {
+        1 -> "High Risk"
+        2 -> "Moderate Risk"
+        3 -> "Low Risk"
+        else -> "Unknown"
+    }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 10.dp)
             .clickable(onClick = onClick)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            // Icon
-             Surface(
-                shape = CircleShape,
-                color = Color(0xFFE0F2F1),
-                modifier = Modifier.size(48.dp)
+        Column(modifier = Modifier.padding(20.dp)) {
+            // Header Row: Date & Arrow
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Text(
+                    text = com.simats.sympcareai.utils.DateTimeUtils.formatToKolkataTime(chat.date, "dd MMM yyyy, hh:mm a"),
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
                 Icon(
-                    imageVector = Icons.Default.ChatBubbleOutline,
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = null,
-                    tint = Color(0xFF009688),
-                    modifier = Modifier.padding(12.dp)
+                    tint = Color.LightGray.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
                 )
             }
             
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            // Disease Name
+            Text(
+                text = chat.disease,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = Color.Black,
+                letterSpacing = (-0.5).sp
+            )
+            
+            Spacer(modifier = Modifier.height(6.dp))
+            
+            // Symptoms List Snippet 
+            Text(
+                text = "Symptoms: ${chat.symptoms.joinToString(", ")}",
+                color = Color.Gray,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                lineHeight = 18.sp
+            )
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            // Containers Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Triage Container
+                Surface(
+                    color = triageBg,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        text = chat.title,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 16.sp,
-                        color = Color.Black
-                    )
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = null,
-                        tint = Color.LightGray,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                Text(
-                    text = chat.snippet,
-                    color = Color.Gray,
-                    fontSize = 14.sp,
-                    maxLines = 2,
-                    lineHeight = 20.sp
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🕒", fontSize = 12.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = chat.time,
-                            color = Color.Gray,
-                            fontSize = 12.sp
-                        )
-                    }
-                    
-                    Surface(
-                        color = chat.statusColor,
-                        shape = RoundedCornerShape(12.dp)
+                    Column(
+                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = chat.status,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                            color = if (chat.status == "moderate") Color(0xFFF57C00) else Color(0xFF2E7D32)
+                            text = "Triage Level",
+                            fontSize = 10.sp,
+                            color = triageColor.copy(alpha = 0.8f),
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = triageLabel,
+                            color = triageColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+                
+                // Severity Container
+                Surface(
+                    color = Color(0xFFE3F2FD),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Severity Score",
+                            fontSize = 10.sp,
+                            color = Color(0xFF1976D2).copy(alpha = 0.8f),
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "${(chat.severityScore * 100).toInt()}%",
+                            color = Color(0xFF1976D2),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
                         )
                     }
                 }

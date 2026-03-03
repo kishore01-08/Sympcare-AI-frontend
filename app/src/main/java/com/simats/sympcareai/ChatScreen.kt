@@ -36,7 +36,8 @@ fun ChatScreen(
     isReadOnly: Boolean = false,
     selectedSymptoms: List<String> = emptyList(),
     patientId: String = "",
-    sessionId: Int = -1
+    sessionId: Int = -1,
+    history: com.simats.sympcareai.data.response.ChatHistoryDTO? = null
 ) {
     var message by remember { mutableStateOf("") }
     var showAllSymptomsPopup by remember { mutableStateOf(false) }
@@ -45,10 +46,15 @@ fun ChatScreen(
     val messages = remember<androidx.compose.runtime.snapshots.SnapshotStateList<ChatMessage>> { mutableStateListOf() }
     val listState = rememberLazyListState()
     
+    // Symptoms to display (either passed in or from history)
+    val displaySymptoms = remember(selectedSymptoms, history) {
+        history?.symptoms ?: selectedSymptoms
+    }
+    
     // Backend Questions State
     var questions by remember { mutableStateOf<List<String>>(emptyList()) }
     var currentQuestionIndex by remember { mutableIntStateOf(0) }
-    var isLoadingQuestions by remember { mutableStateOf(true) }
+    var isLoadingQuestions by remember { mutableStateOf(history == null) }
     var isAnalyzing by remember { mutableStateOf(false) }
     var analysisError by remember { mutableStateOf<String?>(null) }
     
@@ -83,9 +89,31 @@ fun ChatScreen(
         }
     }
 
-    // Fetch questions from backend
+    // Fetch questions from backend OR populate from history
     LaunchedEffect(Unit) {
-        if (!isReadOnly) {
+        if (history != null) {
+            messages.add(ChatMessage("Hello! Here is the record of your consultation for ${history.disease} on ${com.simats.sympcareai.utils.DateTimeUtils.formatToKolkataTime(history.date)}.", isUser = false))
+            
+            history.answers.forEach { (q, a) ->
+                // Skip legacy/helper keys used for backend analysis only
+                if (q != "pain" && q != "days") {
+                    // q is the actual question text now
+                    messages.add(ChatMessage(q, isUser = false))
+                    messages.add(ChatMessage(a, isUser = true))
+                }
+            }
+            
+            messages.add(ChatMessage("Analysis Result: ${history.disease}", isUser = false))
+            val triageText = when(history.triage) {
+                1 -> "High"
+                2 -> "Moderate"
+                3 -> "Low"
+                else -> "Unknown"
+            }
+            messages.add(ChatMessage("Triage: $triageText", isUser = false))
+            
+            isLoadingQuestions = false
+        } else if (!isReadOnly) {
             val request = mapOf(
                 "patient_id" to patientId,
                 "symptoms" to selectedSymptoms
@@ -122,13 +150,17 @@ fun ChatScreen(
             val userMsg = message
             messages.add(ChatMessage(userMsg, isUser = true))
             
-            // Map common questions to backend keys for analysis if needed
+            // Map questions to keys for analysis and history
             if (currentQuestionIndex < questions.size) {
                 val q = questions[currentQuestionIndex]
-                when {
-                    q.contains("severe", ignoreCase = true) || q.contains("1 to 10", ignoreCase = true) -> collectedAnswers["pain"] = userMsg
-                    q.contains("how many days", ignoreCase = true) || q.contains("how long", ignoreCase = true) -> collectedAnswers["days"] = userMsg
-                    else -> collectedAnswers["q_${currentQuestionIndex}"] = userMsg
+                // Store with actual question text as key for history display
+                collectedAnswers[q] = userMsg
+                
+                // Also store with specific keys for legacy backend analysis logic
+                if (q.contains("severe", ignoreCase = true) || q.contains("1 to 10", ignoreCase = true)) {
+                    collectedAnswers["pain"] = userMsg
+                } else if (q.contains("how many days", ignoreCase = true) || q.contains("how long", ignoreCase = true)) {
+                    collectedAnswers["days"] = userMsg
                 }
             }
 
@@ -203,7 +235,7 @@ fun ChatScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Selected Symptoms Display
-            if (selectedSymptoms.isNotEmpty()) {
+            if (displaySymptoms.isNotEmpty()) {
                 Surface(
                     onClick = { showAllSymptomsPopup = true },
                     color = Color.White,
@@ -224,7 +256,7 @@ fun ChatScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            selectedSymptoms.forEach { symptom ->
+                            displaySymptoms.forEach { symptom ->
                                 Surface(
                                     color = Color(0xFFE0F2F1),
                                     shape = RoundedCornerShape(8.dp)

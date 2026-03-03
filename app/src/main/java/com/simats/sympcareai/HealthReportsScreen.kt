@@ -74,7 +74,7 @@ fun HealthReportsScreen(
                 val medicalReportsList = if (reportsResponse.isSuccessful) reportsResponse.body() ?: emptyList() else emptyList()
                 
                 // 3. Load Chat History
-                val chatHistoryResponse = RetrofitClient.apiService.getChatHistory()
+                val chatHistoryResponse = RetrofitClient.apiService.getChatHistory(patientId)
                 val chatHistoryList = if (chatHistoryResponse.isSuccessful) {
                     chatHistoryResponse.body()?.history ?: emptyList()
                 } else emptyList()

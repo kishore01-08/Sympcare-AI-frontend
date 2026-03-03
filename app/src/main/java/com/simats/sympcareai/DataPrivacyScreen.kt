@@ -1,6 +1,7 @@
 package com.simats.sympcareai
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -55,10 +56,6 @@ fun DataPrivacyScreen(
         }
     }
 
-    // Privacy Settings (Mock for now as backend integration is separate)
-    var shareData by remember { mutableStateOf(true) }
-    var saveHistory by remember { mutableStateOf(true) }
-    var personalizedAds by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -130,10 +127,8 @@ fun DataPrivacyScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
             Text(
-                text = "Privacy Settings",
+                text = "Device Settings",
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = Color.Gray,
@@ -147,29 +142,48 @@ fun DataPrivacyScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    PrivacyToggleItem(
-                        icon = Icons.Outlined.Analytics, // Using outlined for settings
-                        title = "Share Usage Data",
-                        description = "Help us improve Sympcare AI by sharing anonymous usage data.",
-                        checked = shareData,
-                        onCheckedChange = { shareData = it }
-                    )
-                    Divider(color = Color.LightGray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 12.dp))
-                    PrivacyToggleItem(
-                        icon = Icons.Outlined.History,
-                        title = "Save Chat History",
-                        description = "Keep a record of your AI consultations for future reference.",
-                        checked = saveHistory,
-                        onCheckedChange = { saveHistory = it }
-                    )
-                    Divider(color = Color.LightGray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 12.dp))
-                    PrivacyToggleItem(
-                        icon = Icons.Outlined.AdsClick,
-                        title = "Personalized Content",
-                        description = "Allow personalized health tips and recommendations.",
-                        checked = personalizedAds,
-                        onCheckedChange = { personalizedAds = it }
-                    )
+                    val openSettings = {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    }
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { openSettings() }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = null,
+                            tint = Color(0xFF009688),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Manage Device Settings",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color.Black
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Adjust permissions in system settings",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
             

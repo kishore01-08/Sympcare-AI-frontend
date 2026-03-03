@@ -37,7 +37,8 @@ import kotlinx.coroutines.launch
 fun PatientLoginScreen(
     onSignUpClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
-    onLoginSuccess: (String, String) -> Unit
+    onLoginSuccess: (String, String) -> Unit,
+    onProfileIncomplete: (String, String) -> Unit
 ) {
     var patientId by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -234,13 +235,17 @@ fun PatientLoginScreen(
                                 if (apiResponse.isSuccessful) {
                                     val response = apiResponse.body()
                                     if (response?.status == "login_success") {
-                                        // Save credentials if Remember Me is checked
                                         preferenceManager.savePatientCredentials(patientId, password, rememberMe)
-                                        
                                         android.widget.Toast.makeText(context, "Login Successful", android.widget.Toast.LENGTH_SHORT).show()
                                         val pid = response.patientId ?: patientId
                                         val name = response.fullName ?: "Patient"
                                         onLoginSuccess(pid, name)
+                                    } else if (response?.status == "profile_incomplete") {
+                                        preferenceManager.savePatientCredentials(patientId, password, rememberMe)
+                                        android.widget.Toast.makeText(context, "Complete your profile first", android.widget.Toast.LENGTH_SHORT).show()
+                                        val pid = response.patientId ?: patientId
+                                        val name = response.fullName ?: "Patient"
+                                        onProfileIncomplete(pid, name)
                                     } else {
                                         errorMessage = response?.error ?: "Login failed"
                                     }
@@ -248,7 +253,15 @@ fun PatientLoginScreen(
                                     val errorBody = apiResponse.errorBody()?.string()
                                     try {
                                         val errorJson = org.json.JSONObject(errorBody ?: "{}")
-                                        errorMessage = errorJson.optString("error", "Login failed (Server error)")
+                                        if (errorJson.optString("status") == "profile_incomplete") {
+                                            preferenceManager.savePatientCredentials(patientId, password, rememberMe)
+                                            android.widget.Toast.makeText(context, "Complete your profile first", android.widget.Toast.LENGTH_SHORT).show()
+                                            val pid = errorJson.optString("patient_id", patientId)
+                                            val name = errorJson.optString("full_name", "Patient")
+                                            onProfileIncomplete(pid, name)
+                                        } else {
+                                            errorMessage = errorJson.optString("error", "Login failed (Server error)")
+                                        }
                                     } catch (e: Exception) {
                                         errorMessage = "Login failed: ${apiResponse.message()}"
                                     }
@@ -258,7 +271,15 @@ fun PatientLoginScreen(
                                 val errorBody = e.response()?.errorBody()?.string()
                                 try {
                                     val errorJson = org.json.JSONObject(errorBody ?: "{}")
-                                    errorMessage = errorJson.optString("error", "Login failed")
+                                    if (errorJson.optString("status") == "profile_incomplete") {
+                                        preferenceManager.savePatientCredentials(patientId, password, rememberMe)
+                                        android.widget.Toast.makeText(context, "Complete your profile first", android.widget.Toast.LENGTH_SHORT).show()
+                                        val pid = errorJson.optString("patient_id", patientId)
+                                        val name = errorJson.optString("full_name", "Patient")
+                                        onProfileIncomplete(pid, name)
+                                    } else {
+                                        errorMessage = errorJson.optString("error", "Login failed")
+                                    }
                                 } catch (jsonException: Exception) {
                                     errorMessage = "Login failed: ${e.code()}"
                                 }

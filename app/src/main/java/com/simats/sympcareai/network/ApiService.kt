@@ -151,5 +151,5 @@ interface ApiService {
     suspend fun getReportAnalysis(@retrofit2.http.Path("report_id") reportId: Int): Response<FileAnalysisResponse>
     
     @GET("chat/history/")
-    suspend fun getChatHistory(): Response<ChatHistoryListResponse>
+    suspend fun getChatHistory(@retrofit2.http.Query("patient_id") patientId: String): Response<ChatHistoryListResponse>
 }

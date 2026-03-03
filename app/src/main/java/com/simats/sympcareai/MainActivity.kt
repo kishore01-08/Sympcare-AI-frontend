@@ -20,6 +20,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.simats.sympcareai.ui.theme.SympcareAITheme
 import androidx.compose.ui.graphics.Color
 import com.simats.sympcareai.data.response.AIAnalysisResponse
+import com.simats.sympcareai.data.response.ChatHistoryDTO
 import com.simats.sympcareai.network.RetrofitClient
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -30,6 +31,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val context = androidx.compose.ui.platform.LocalContext.current
             // Force Light Theme as per user request to remove Dark Mode feature
             SympcareAITheme(darkTheme = false) {
                 // Manual BackStack Implementation
@@ -172,13 +174,18 @@ class MainActivity : FragmentActivity() {
                                 tempPatientName = name
                                 resetTo(Screen.PatientHome) 
                             },
+                            onPatientProfileIncomplete = { id, name ->
+                                android.widget.Toast.makeText(context, "Patient found ! Redirecting to health profile...", android.widget.Toast.LENGTH_SHORT).show()
+                                tempPatientId = id
+                                tempPatientName = name
+                                navigateTo(Screen.PatientHealthProfile)
+                            },
                             initialPage = 0 // Default to Patient
                         )
                     }
                     Screen.DoctorHome -> {
                         DoctorHomeScreen(
                             onPatientPortalClick = { navigateTo(Screen.DoctorPatientPortal) },
-                            onChatClick = { navigateTo(Screen.DoctorChat) },
                             onNavigateTo = { screen -> 
                                 if (screen == Screen.DoctorPatients) patientListFilter = "Total"
                                 navigateTo(screen) 
@@ -202,7 +209,6 @@ class MainActivity : FragmentActivity() {
                         DoctorProfileScreen(
                             onBackClick = { navigateBack() },
                             onEditClick = { navigateTo(Screen.EditDoctorProfile) },
-                            onChatClick = { navigateTo(Screen.DoctorChat) },
                             userId = tempDoctorId
                         )
                     }
@@ -562,17 +568,19 @@ class MainActivity : FragmentActivity() {
                     Screen.ChatHistory -> {
                         ChatHistoryScreen(
                             onBackClick = { navigateBack() },
-                            onChatClick = { navigateTo(Screen.ChatReadOnly) },
-                            onNavigateTo = { screen -> navigateTo(screen) }
+                            onChatClick = { historyItem -> navigateTo(Screen.ChatReadOnly(historyItem)) },
+                            onNavigateTo = { screen -> navigateTo(screen) },
+                            patientId = tempPatientId
                         )
                     }
-                    Screen.ChatReadOnly -> {
+                    is Screen.ChatReadOnly -> {
                         ChatScreen(
                             onBackClick = { navigateBack() },
                             onNavigateTo = { screen -> navigateTo(screen) },
                             onFinishClick = {}, // Hide finish button if needed or handle logic
                             isReadOnly = true,
-                            patientId = tempPatientId
+                            patientId = tempPatientId,
+                            history = currentScreen.history
                         )
                     }
                     Screen.HealthMonitor -> {
@@ -677,7 +685,7 @@ class MainActivity : FragmentActivity() {
                     Screen.AboutApp -> {
                         AboutAppScreen(onBackClick = { navigateBack() })
                     }
-                    Screen.TermsAndConditions -> {
+                    Screen.TermsOfService -> {
                         TermsAndConditionsScreen(onBackClick = { navigateBack() })
                     }
                     Screen.DataAndPrivacy -> {
@@ -775,7 +783,7 @@ sealed class Screen {
     object PatientProfile : Screen()
     object EditPatientProfile : Screen()
     object ChatHistory : Screen()
-    object ChatReadOnly : Screen()
+    data class ChatReadOnly(val history: com.simats.sympcareai.data.response.ChatHistoryDTO) : Screen()
     object HealthMonitor : Screen()
     data class HealthAssessment(val type: HealthAssessmentType = HealthAssessmentType.MORNING_WELLNESS) : Screen()
     data class HealthAnalysisResult(val score: Int = 0) : Screen()
@@ -788,7 +796,7 @@ sealed class Screen {
     object PatientResetPasswordLoggedIn : Screen()
     object DoctorResetPasswordLoggedIn : Screen()
     object AboutApp : Screen()
-    object TermsAndConditions : Screen()
+    object TermsOfService : Screen()
     object DataAndPrivacy : Screen()
     object DoctorProfileRegistration : Screen()
     

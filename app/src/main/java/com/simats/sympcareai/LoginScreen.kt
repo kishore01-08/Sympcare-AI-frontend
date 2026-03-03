@@ -28,6 +28,7 @@ fun LoginScreen(
     onPatientSignUpClick: () -> Unit,
     onPatientForgotPasswordClick: () -> Unit,
     onPatientLoginSuccess: (String, String) -> Unit,
+    onPatientProfileIncomplete: (String, String) -> Unit,
     initialPage: Int = 0 
 ) {
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { 2 })
@@ -56,7 +57,8 @@ fun LoginScreen(
                 0 -> PatientLoginScreen(
                     onSignUpClick = onPatientSignUpClick,
                     onForgotPasswordClick = onPatientForgotPasswordClick,
-                    onLoginSuccess = { id, name -> onPatientLoginSuccess(id, name) }
+                    onLoginSuccess = { id, name -> onPatientLoginSuccess(id, name) },
+                    onProfileIncomplete = { id, name -> onPatientProfileIncomplete(id, name) }
                 )
                 1 -> DoctorLoginScreen(
                     onSignUpClick = onDoctorSignUpClick,

@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun DoctorHomeScreen(
     onPatientPortalClick: () -> Unit,
-    onChatClick: () -> Unit,
     onNavigateTo: (Screen) -> Unit,
     onProfileClick: () -> Unit,
     onPatientsTodayClick: () -> Unit,
@@ -144,40 +143,44 @@ fun DoctorHomeScreen(
                             .height(140.dp)
                             .clickable { onPatientsTodayClick() },
                         shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1C338)) // keep as is or change? User said "all screens of doctor". Let's check if this needs to change. 
-                        // The user said "profile whole color grading of orange shade to 0xFF6A5ACD". 
-                        // The "Patients Today" card is Yellow/Orange. I should probably change it to a complementary purple or keep it distinct.
-                        // Let's keep it distinct for now as it's a specific status card, unless explicitly asked.
-                        // BUT, the request said "all screens of doctor and login of doctor".
-                        // Let's change the Quick Action icons though.
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Column(
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
+                                .background(
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(Color(0xFFF1C338), Color(0xFFFF9800))
+                                    )
+                                )
+                                .padding(16.dp)
                         ) {
-                            Surface(
-                                color = Color.White.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.size(40.dp)
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White)
+                                Surface(
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White)
+                                    }
                                 }
-                            }
-                            Column {
-                                Text(
-                                    text = "$patientsTodayCount",
-                                    color = Color.White,
-                                    fontSize = 28.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Pending",
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    fontSize = 12.sp
-                                )
+                                Column {
+                                    Text(
+                                        text = "$patientsTodayCount",
+                                        color = Color.White,
+                                        fontSize = 28.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Pending",
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -189,35 +192,44 @@ fun DoctorHomeScreen(
                             .height(140.dp)
                             .clickable { onCompletedPatientsClick() },
                         shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF00BFA5)) // Teal/Green
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                         Column(
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
+                                .background(
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(Color(0xFF00BFA5), Color(0xFF00897B))
+                                    )
+                                )
+                                .padding(16.dp)
                         ) {
-                            Surface(
-                                color = Color.White.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.size(40.dp)
+                             Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White)
+                                Surface(
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White)
+                                    }
                                 }
-                            }
-                            Column {
-                                Text(
-                                    text = "$completedPatientsCount",
-                                    color = Color.White,
-                                    fontSize = 28.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Completed",
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    fontSize = 12.sp
-                                )
+                                Column {
+                                    Text(
+                                        text = "$completedPatientsCount",
+                                        color = Color.White,
+                                        fontSize = 28.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Completed",
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -236,28 +248,15 @@ fun DoctorHomeScreen(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Row(
+                // Patient Portal Action
+                QuickActionCard(
+                    icon = Icons.Default.Person,
+                    label = "Patient Portal",
+                    iconColor = Color(0xFF6A5ACD), // SlateBlue
+                    onClick = onPatientPortalClick,
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Patient Portal Action
-                    QuickActionCard(
-                        icon = Icons.Default.Person,
-                        label = "Patient Portal",
-                        iconColor = Color(0xFF6A5ACD), // SlateBlue
-                        onClick = onPatientPortalClick,
-                        modifier = Modifier.weight(1f)
-                    )
-                    
-                    // Start AI Chat Action
-                     QuickActionCard(
-                        icon = Icons.Default.Chat,
-                        label = "Start AI Chat",
-                        iconColor = Color(0xFF9683EC), // Light Purple
-                        onClick = onChatClick,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                    backgroundGradient = listOf(Color(0xFF6A5ACD), Color(0xFF483D8B))
+                )
 
                 Spacer(modifier = Modifier.height(24.dp))
 

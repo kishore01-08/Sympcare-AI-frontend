@@ -27,7 +27,7 @@ fun TermsAndConditionsScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Terms & Conditions", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = { Text("Terms of Service", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -63,7 +63,7 @@ fun TermsAndConditionsScreen(
 
                     TermsSection(
                         title = "1. Introduction",
-                        content = "Welcome to Sympcare AI. By accessing or using our mobile application, you agree to be bound by these Terms and Conditions. If you do not agree to all of these terms, do not use this application."
+                        content = "Welcome to Sympcare AI. By accessing or using our mobile application, you agree to be bound by these Terms of Service. If you do not agree to all of these terms, do not use this application."
                     )
 
                     TermsSection(

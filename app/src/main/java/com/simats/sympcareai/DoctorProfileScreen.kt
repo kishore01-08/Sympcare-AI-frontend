@@ -35,7 +35,6 @@ import retrofit2.Response
 fun DoctorProfileScreen(
     onBackClick: () -> Unit,
     onEditClick: () -> Unit,
-    onChatClick: () -> Unit,
     userId: String // Pass the doc_id from MainActivity
 ) {
     val context = LocalContext.current

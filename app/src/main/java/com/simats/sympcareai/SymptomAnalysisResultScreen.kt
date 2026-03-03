@@ -157,12 +157,12 @@ fun SymptomAnalysisResultScreen(
             }
             
             Button(
-                onClick = { onNavigateTo(Screen.Feedback) },
+                onClick = { onNavigateTo(Screen.PatientHome) },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(25.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF009688))
             ) {
-                Text("Provide Feedback", fontWeight = FontWeight.Bold)
+                Text("Back to Home", fontWeight = FontWeight.Bold)
             }
             
             Spacer(modifier = Modifier.height(24.dp))

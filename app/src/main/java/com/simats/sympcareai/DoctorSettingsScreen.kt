@@ -124,27 +124,30 @@ fun DoctorSettingsScreen(
                             icon = Icons.Outlined.Security,
                             title = "Data & Privacy",
                             subtitle = "Manage permissions and data security",
-                            iconBgColor = Color(0xFFE0F2F1), // Light Teal
+                            iconBgColor = Color(0xFFE0F2F1), // Fallback
                             iconColor = Color(0xFF009688),
-                            onClick = { onNavigateTo(Screen.DataAndPrivacy) }
+                            onClick = { onNavigateTo(Screen.DataAndPrivacy) },
+                            backgroundGradient = listOf(Color(0xFF009688), Color(0xFF00BFA5))
                         )
                         Divider(color = Color.LightGray.copy(alpha = 0.2f))
                         SettingsMenuItem(
                             icon = Icons.Outlined.Description,
-                            title = "Terms & Conditions",
+                            title = "Terms of Service",
                             subtitle = "View app usage policies",
-                            iconBgColor = Color(0xFFE3F2FD), // Light Blue
+                            iconBgColor = Color(0xFFE3F2FD), // Fallback
                             iconColor = Color(0xFF2196F3),
-                            onClick = { onNavigateTo(Screen.TermsAndConditions) }
+                            onClick = { onNavigateTo(Screen.TermsOfService) },
+                            backgroundGradient = listOf(Color(0xFF2196F3), Color(0xFF64B5F6))
                         )
                          Divider(color = Color.LightGray.copy(alpha = 0.2f))
                         SettingsMenuItem(
                             icon = Icons.Outlined.Person,
                             title = "Account",
                             subtitle = "Manage doctor profile, password",
-                            iconBgColor = Color(0xFFF3E5F5), // Light Purple
+                            iconBgColor = Color(0xFFF3E5F5), // Fallback
                             iconColor = Color(0xFF9C27B0),
-                            onClick = { onNavigateTo(Screen.DoctorAccountSettings) }
+                            onClick = { onNavigateTo(Screen.DoctorAccountSettings) },
+                            backgroundGradient = listOf(Color(0xFF9C27B0), Color(0xFFBA68C8))
                         )
 
 
@@ -152,9 +155,10 @@ fun DoctorSettingsScreen(
                             icon = Icons.Outlined.Info,
                             title = "About App",
                             subtitle = "Version, developer info, app details",
-                            iconBgColor = Color(0xFFE0F7FA), // Android Cyan
+                            iconBgColor = Color(0xFFE0F7FA), // Fallback
                             iconColor = Color(0xFF00BCD4),
-                            onClick = { onNavigateTo(Screen.AboutApp) }
+                            onClick = { onNavigateTo(Screen.AboutApp) },
+                            backgroundGradient = listOf(Color(0xFF00BCD4), Color(0xFF4DD0E1))
                         )
                     }
                 }
